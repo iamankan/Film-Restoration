@@ -181,3 +181,11 @@ But, for now the easiest thing to do is:
 ```shell
 vc_packager -v [volpkg-directory]/[ID]_IBW_10um_60kV_MS.volpkg --name ID_IBW_10um_60kV_MS -m 140 -s [reconstruction-directory]/[ID]/[ID]_IBW_10um_60kV_MS_Rec_ROI/[ID]_IBW_10um_60kV_MS__rec.log -n roi -u 10
 ```
+- In order to see the arguments under `packager.sh`run:
+```shell
+data/scripts/packager.sh --help
+```
+- In order to generate `*.volpkg` packages, run:
+```shell
+data/scripts/packager.sh --reconstruction-directory /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/Reconstructions --volpkg-directory /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/volpkgs
+```
