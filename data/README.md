@@ -108,3 +108,5 @@ The image is labelled. The white part of the film is the emulsion, which is resp
 ![001_slice_000_cropped_labelled](media/images/001_slice000_crop_labelled.jpg)
 
 From the image we can see that the thickness of the film is ~140&mu;m and the emulsion is ~40&mu;m. So, 30% of the thivkness of the film is emulsion.
+
+<div style="text-align:center"><img src="media/images/001_slice000_crop_labelled.jpg" /></div>
