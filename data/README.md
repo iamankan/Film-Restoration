@@ -104,7 +104,7 @@ As a preliminary analysis of the data, we see how a slice looks. Then label the 
 The first slice for the film ID:`001` looks like this:
 <div style="text-align:center"><img src="media/images/001_slice000_labelled.jpg" /></div>
 
-The image is labelled. The white part of the film is the emulsion, which is responsible for the images formed after developing the film negative. 
+The image is labelled. The white part of the film is the emulsion, which is responsible for the images formed after developing the film negative. The rest black part is air. So, in CT-scan, the darker part is air and the brighter part is the one where X-ray has been absorbed.
 
 ### Analysis of a slice
 
@@ -113,3 +113,71 @@ Now, as of analysis, let us measure the thickness of the film and the thickness 
 
 From the image we can see that the thickness of the film is _~140&mu;m_ and the emulsion is _~40&mu;m_. So, _~28.5%_ of the thickness of the film is emulsion.
 
+## Writing the script
+
+Now, that we have scanned 15 frames, `ID` starting from `001` all the way upto `015`, let's start writing the shell script. We need to have two scripts, one for making the `*.volpkg` and the other for rendering. The second one should be a pipeline. So, let's start with the first script, and name it `packager.sh`. Let's name the second script as `render.sh`.
+
+### Script 1: Making the `*.volpkg`
+
+The name or the script should be `packager.sh`. For making the `*.volpkg`, we need to use the command `vc_packager` from [`volume-cartographer`](https://github.com/educelab/volume-cartographer). The `vc_packager` has the following arguments:
+```
+Usage:
+
+Options:
+  -h [ --help ]                    Show this message
+  -v [ --volpkg ] arg              Path for the output volume package.
+
+Volpkg metadata:
+  --name arg                       Set a descriptive name for the VolumePkg. 
+                                   Default: Filename specified by --volpkg
+  -m [ --material-thickness ] arg  Estimated thickness of a material layer (in 
+                                   microns). Required when making a new volume 
+                                   package.
+
+Volume:
+  -s [ --slices ] arg              Path to input slice data. Ends with prefix 
+                                   of slice images or log file path. Required 
+                                   when making a new volume. If specified 
+                                   multiple times, volume options will be 
+                                   associated with the previous slices.
+  -n [ --volume-name ] arg         Descriptive name for the volume. Required 
+                                   when making a new volume.
+  -u [ --voxel-size-um ] arg       Voxel size of the volume in microns (e.g. 
+                                   13.546). Required when making a new volume.
+  -f [ --flip ] arg                Flip options: Vertical flip (vf), horizontal
+                                   flip (hf), both, z-flip (zf), all, [none].
+  -c [ --compress ]                Compress slice images
+```
+
+Our recon folder structure is like this:
+```
+└── Reconstructions
+    ├── 001
+    │   └──001_IBW_10um_60kV_MS_Rec_ROI
+    │       ├── 001_IBW_10um_60kV_MS__rec.log
+    │       ├── 001_IBW_10um_60kV_MS__rec00000218.tif
+    │       ├── ...
+    │       └── ...
+    └── ...
+```
+
+Considering this as a standard file structure for our work, we want to write a script that parses it, reads `001`, take a file-subscript `_IBW_10um_60kV_MS`, a recon-subscript `[file-subscript]_Rec_ROI` and then figure out that the `*.log` file is actually `[ID]/[ID][recon-subscript]/[file-subscript]__rec.log`. Then it should take the other arguments like for `--name` , `--material-thickness`, `--volume-name`, `--voxel-size-um`.
+The shell script should have the following arguments (mandetory):
+
+- `reconstruction-directory`
+- `volpkg-directory`
+- `volpkg-subscript`
+- `recon-subscript`
+- `name`
+- `material-thickness`
+- `volume-name`
+- `voxel-size-um`
+
+But, for now the easiest thing to do is:
+
+- Take in two arguments `reconstruction-directory`, and `volpkg-directory`
+- Iterate the directory and read the `ID`
+- The replace the `ID` in
+```shell
+vc_packager -v [volpkg-directory]/[ID]_IBW_10um_60kV_MS.volpkg --name ID_IBW_10um_60kV_MS -m 140 -s [reconstruction-directory]/[ID]/[ID]_IBW_10um_60kV_MS_Rec_ROI/[ID]_IBW_10um_60kV_MS__rec.log -n roi -u 10
+```
