@@ -36,6 +36,9 @@ We are using a micro-CT scanner named [SKYSCAN 1273](https://www.microphotonics.
 |Rotation angle | 0.150&deg; |
 |360&deg; | ✅ |
 |Resolution | 10&mu;m |
+|Vertical position | 192mm |
+|Diameter of the object | 15mm |
+|Height of the object | 35mm |
 
 ## Post-processing
 
@@ -70,8 +73,8 @@ vc_packager -v volpkgs/001_IBW_10um_60kV_MS.volpkg --name 001_IBW_10um_60kV_MS -
 - For slices 0-5, use LRPS with window size of “15”
 - Then from 5-1509, use window size of “5”
 - After segmentation is done, do the rendering in the following way:
-    - Save the “*.obj” file (it will have a tif, a mtl and an obj file)
-    - Save the “*.ppm” file
+    - Save the `*.obj` file (it will have a `*tif`, a `*.mtl` and a `*.obj` file)
+    - Save the `*.ppm` file
     - Save the composites:
         - Max
         - Average/Mean
@@ -91,3 +94,17 @@ vc_packager -v volpkgs/001_IBW_10um_60kV_MS.volpkg --name 001_IBW_10um_60kV_MS -
         └── render          # contains `ID_max.tif`, `ID_mean.tif`, `ID_median.tif`
     ```
 - A shell script should be made to create the above directory
+
+## Preliminary analysis
+
+As a preliminary analysis of the data, we see how a slice looks. Then label the slices to understand the film structure better and what information does the scan convey.
+
+### Viewing the slice
+
+The first slice for the film ID:`001` looks like this:
+![001_slice_000_labelled](media/images/001_slice000_labelled.jpg)
+
+The image is labelled. The white part of the film is the emulsion, which is responsible for the images formed after developing the film negative. Now, as of analysis, let us measure the thickness of the film and the thickness of the emulsion.
+![001_slice_000_cropped_labelled](media/images/001_slice000_crop_labelled.jpg)
+
+From the image we can see that the thickness of the film is ~140&mu;m and the emulsion is ~40&mu;m. So, 30% of the thivkness of the film is emulsion.
