@@ -1,6 +1,8 @@
 # TO-DO List
 - ✅ Figure out scan protocols
-- 🌝 Scanning
+- ✅ Scanning (001-015)
+- ✅ Making the `*.volpkg` files
+- ❌ Segmentation
 - ❌ Image registration
 - ❌ Rendering composites
     - ❌ Max
