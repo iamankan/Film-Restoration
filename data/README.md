@@ -99,14 +99,17 @@ vc_packager -v volpkgs/001_IBW_10um_60kV_MS.volpkg --name 001_IBW_10um_60kV_MS -
 
 As a preliminary analysis of the data, we see how a slice looks. Then label the slices to understand the film structure better and what information does the scan convey.
 
-### Viewing the slice
+### Viewing a slice
 
 The first slice for the film ID:`001` looks like this:
-![001_slice_000_labelled](media/images/001_slice000_labelled.jpg)
+<div style="text-align:center"><img src="media/images/001_slice000_labelled.jpg" /></div>
 
-The image is labelled. The white part of the film is the emulsion, which is responsible for the images formed after developing the film negative. Now, as of analysis, let us measure the thickness of the film and the thickness of the emulsion.
-![001_slice_000_cropped_labelled](media/images/001_slice000_crop_labelled.jpg)
+The image is labelled. The white part of the film is the emulsion, which is responsible for the images formed after developing the film negative. 
+
+### Analysis of a slice
+
+Now, as of analysis, let us measure the thickness of the film and the thickness of the emulsion.
+<div style="text-align:center"><img src="media/images/001_slice000_crop_labelled.jpg" /></div>
 
 From the image we can see that the thickness of the film is ~140&mu;m and the emulsion is ~40&mu;m. So, 30% of the thivkness of the film is emulsion.
 
-<div style="text-align:center"><img src="media/images/001_slice000_crop_labelled.jpg" /></div>
