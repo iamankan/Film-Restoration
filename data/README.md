@@ -37,7 +37,55 @@ We are using a micro-CT scanner named [SKYSCAN 1273](https://www.microphotonics.
 |360&deg; | ✅ |
 |Resolution | 10&mu;m |
 
+## Post-processing
 
+The above protocol is used to scan the Ilford films. The process of scanning the film is:
 
+- Roll the film and put it into the mount and assign it an ID
+- Correct the flat fielding if necessary before scanning (50% Avg with FF-off and empty FOV, 85% Max with FF-on and empty FOV, 40-60% Min with object of interest to be scanned in FOV)
+- Set the protocol and scan it. For SKYSCAN it takes 1hr 20 mins to 1hr 30 mins on an average.
+- After the scan is done:
+- Take out the film
+- Frame it back with the corresponding ID
+- Take out a new film and redo till here from Step-1
+- The projections are saved under the folder type:
+`[Mount type]/FrameAvg/[ID]/[ID]_IBW_10um_60kV_MS`
 
+Once the film is scanned following have to be done:
+- Import the projection into `NRecon`
+- Check the misplacement and compensate for it (if needed)
+- Preview few slices of reconstruction and fix the Histogram for better dynamic range
+- Save the recon-files as `TIF(16 bit)` with a circular ROI, under `[Mount type]/FrameAvg/[ID]/[ID]_IBW_10um_60kV_MS/[ID]_IBW_10um_60kV_MS_Rec_ROI`
 
+After saving the Reconstruction, do the following:
+- Backup the projection data to the Seagate 24TB external HDD and delete it from the SKYSCAN Desktop
+- Take the ROI-reconstruction data into an external SSD
+- Convert that into `*.volpkg` using the following command:
+```shell
+vc_packager -v volpkgs/001_IBW_10um_60kV_MS.volpkg --name 001_IBW_10um_60kV_MS -m 140 -s Reconstructions/001/001_IBW_10um_60kV_MS_Rec_ROI/001_IBW_10um_60kV_MS__rec.log -n roi -u 10
+```
+- Open VC and do the segmentation:
+- For slices 0-5, use LRPS with window size of “15”
+- Then from 5-1509, use window size of “5”
+- After segmentation is done, do the rendering in the following way:
+    - Save the “*.obj” file (it will have a tif, a mtl and an obj file)
+    - Save the “*.ppm” file
+    - Save the composites:
+        - Max
+        - Average/Mean
+        - Median
+    - Layers
+    - Find and save the corresponding optical image
+- After rendering is done, register the optical image with the max-composite render
+- The final data for ML model training and data release should look like this in file structure:
+
+    ```shell
+    IlfordBW
+    ├── ID
+        ├── layers          # contains `ID_00.png`, `ID_01.png`, …, `ID_13.png`
+        ├── match           # contains `ID_optical.jpg`, `ID_register.tif`
+        ├── obj             # contains `ID.obj`, `ID.mtl` and `ID.tif`
+        ├── ppm             # contains `ID_….tif`, `*.png`, `*.ppm`
+        └── render          # contains `ID_max.tif`, `ID_mean.tif`, `ID_median.tif`
+    ```
+- A shell script should be made to create the above directory
