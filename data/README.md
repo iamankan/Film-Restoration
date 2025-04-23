@@ -1,4 +1,4 @@
-# Film Restoration Data collection and archieving
+# Film Restoration Data collection and archiving
 
 
 This sub-repository is for data creation and data handling. This sub-repository will do the following:

@@ -1,8 +1,10 @@
 # TO-DO List
 - ✅ Figure out scan protocols
 - ✅ Scanning (001-015)
-- ✅ Making the `*.volpkg` files
+- ✅ Code the `packager.sh` script to generate `*.volpkg` files 
 - ❌ Segmentation
+- ❌ Check the orientations
+- ❌ Code the `render.sh` script
 - ❌ Image registration
 - ❌ Rendering composites
     - ❌ Max
