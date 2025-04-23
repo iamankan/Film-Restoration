@@ -1,7 +1,7 @@
 # Film Restoration Data collection and archieving
 
 
-This sub-repository is for data creation and data handling. This repository eill do the followings
+This sub-repository is for data creation and data handling. This sub-repository will do the following:
 
 - Deals with scanning the Film data
 - Unwrapping them films virtually and registering them with the optical data
@@ -39,28 +39,30 @@ We are using a micro-CT scanner named [SKYSCAN 1273](https://www.microphotonics.
 
 ## Post-processing
 
-The above protocol is used to scan the Ilford films. The process of scanning the film is:
 
+### Film scanning process
 - Roll the film and put it into the mount and assign it an ID
 - Correct the flat fielding if necessary before scanning (50% Avg with FF-off and empty FOV, 85% Max with FF-on and empty FOV, 40-60% Min with object of interest to be scanned in FOV)
 - Set the protocol and scan it. For SKYSCAN it takes 1hr 20 mins to 1hr 30 mins on an average.
 - After the scan is done:
 - Take out the film
-- Frame it back with the corresponding ID
-- Take out a new film and redo till here from Step-1
-- The projections are saved under the folder type:
-`[Mount type]/FrameAvg/[ID]/[ID]_IBW_10um_60kV_MS`
+    - Frame it back with the corresponding ID
+    - Take out a new film and redo till here from Step-1
+    - The projections are saved under the folder type:
+    `[Mount type]/FrameAvg/[ID]/[ID]_IBW_10um_60kV_MS`
 
-Once the film is scanned following have to be done:
+### What to do with the films after scanning
+
 - Import the projection into `NRecon`
 - Check the misplacement and compensate for it (if needed)
 - Preview few slices of reconstruction and fix the Histogram for better dynamic range
 - Save the recon-files as `TIF(16 bit)` with a circular ROI, under `[Mount type]/FrameAvg/[ID]/[ID]_IBW_10um_60kV_MS/[ID]_IBW_10um_60kV_MS_Rec_ROI`
 
-After saving the Reconstruction, do the following:
+### What to do after CT-reconstruction
+
 - Backup the projection data to the Seagate 24TB external HDD and delete it from the SKYSCAN Desktop
 - Take the ROI-reconstruction data into an external SSD
-- Convert that into `*.volpkg` using the following command:
+- Convert that into `*.volpkg` using the following command using [`volume-cartographer](https://github.com/educelab/volume-cartographer):
 ```shell
 vc_packager -v volpkgs/001_IBW_10um_60kV_MS.volpkg --name 001_IBW_10um_60kV_MS -m 140 -s Reconstructions/001/001_IBW_10um_60kV_MS_Rec_ROI/001_IBW_10um_60kV_MS__rec.log -n roi -u 10
 ```
