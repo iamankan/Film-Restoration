@@ -189,3 +189,279 @@ data/scripts/packager.sh --help
 ```shell
 data/scripts/packager.sh --reconstruction-directory /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/Reconstructions --volpkg-directory /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/volpkgs
 ```
+### Post segmentation
+
+After the segmentations are completed, now it is time to analyse them and make the dataset. In order to analyze them, we want to put the rendered image and the optical image side-by-side for comparison, over [here](README.md).
+
+In order to do that, we also need to reduce the size of the image, as it will be hard for GitHub to store all images, averaging to 23MB of sizes. So, we use the following command to reduce from 20MB to ~2MB:
+```shell
+magick mogrify -path ../optical_reduced/ -quality 25 *.jpg
+```
+
+With the initial scan, we have scanned 15 frames. The FOV of the scan consisted of the middle part of the whole film. So, compared to the digital image, the rendering is smaller. Let's also name the frames close to the content of the picture.
+
+Also we need to register the images. For registration, we need to keep the X-ray rendered image fixed, and make the digital image moving. We use the [registration-toolkit](https://gitlab.com/educelab/registration-toolkit/-/tree/seam-flattening?ref_type=heads). Use branch [seam-flattening](https://gitlab.com/educelab/registration-toolkit/-/tree/seam-flattening?ref_type=heads). And then run these two commands:
+```shell
+git clone git@gitlab.com:educelab/registration-toolkit.git
+cd registration-toolkit
+git checkout seam-flattening
+cmake -S . -B build/ -DCMAKE_BUILD_TYPE=Release
+cmake --build build/
+```
+Then run `rt_register` from `../registration-toolkit/build/bin/rt_register`.
+
+For registration, the following command needs to be run in shell/terminal:
+```shell
+/path/to/rt_register -m /path/to/optical_image.ext -f /path/to/xray_render.ext -o /path/to/saved_registered_image.ext
+```
+
+For `.ext`, it is better to use a `.tif`, so that it is lossless value.
+
+#### Film_001: Hardymon parking lot
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/001_render.jpg)  |  ![digital](media/images/optical_reduced/001.jpg)
+
+Now, let's register. The command that I ran is:
+```shell
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m optical/001.jpg -f xray_render/edited/tif/001_render.tif -o registered/001_reg.tif
+```
+
+After registration, as `*.tif`, we convert that into `*.jpg` to make it lightweighted to attach the files to a document, using the following command from [imagemagick-mogrify](https://imagemagick.org/script/mogrify.php):
+```shell
+mogrify -path jpeg/ -quality 25 -format jpg tifs/*.tif
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/001_render.jpg)  |  ![digital](media/images/registered/jpgs/001_reg.jpg)
+
+
+#### Film_002: Ankan in Hardymon
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/002_render.jpg)  |  ![digital](media/images/optical_reduced/002.jpg)
+
+Now, let's register. The command that I ran is:
+```shell
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m optical/002.jpg -f xray_render/edited/tif/002_render.tif -o registered/002_reg.tif
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/002_render.jpg)  |  ![digital](media/images/registered/jpgs/002_reg.jpg)
+
+#### Film_003: Mystery hands
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/003_render.jpg)  |  ![digital](media/images/optical_reduced/003.jpg)
+
+Now, let's register. The command that I ran is:
+```shell
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m optical/003.jpg -f xray_render/edited/tif/003_render.tif -o registered/003_reg.tif
+```
+
+It is prone to error to run these commands, by changing the ids. Let's make a shell script `register.sh`. For now let's keep everything as static and replace the `id`.Let's make the script. The shell script is ready [here](scripts/register.sh). Let's try it out. The script arguments are:
+```shell
+ankan@Ankans-MacBook-Air data % scripts/register.sh --help  
+Unknown parameter: --help
+Usage: scripts/register.sh --id <film-id>
+
+Arguments:
+  --id   Film id
+Example:
+  scripts/register.sh --id 001
+```
+
+Now, let's execute it with the command:
+```shell
+scripts/register.sh --id 003
+```
+And it works.
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/003_render.jpg)  |  ![digital](media/images/registered/jpgs/003_reg.jpg)
+
+#### Film_004: Hardymon arch window
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/004_render.jpg)  |  ![digital](media/images/optical_reduced/004.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 004
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/004_render.jpg)  |  ![digital](media/images/registered/jpgs/004_reg.jpg)
+
+#### Film_005: Prakash working
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/005_render.jpg)  |  ![digital](media/images/optical_reduced/005.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 005
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/005_render.jpg)  |  ![digital](media/images/registered/jpgs/005_reg.jpg)
+
+#### Film_006: Lab of Prakash
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/006_render.jpg)  |  ![digital](media/images/optical_reduced/006.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 006
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/006_render.jpg)  |  ![digital](media/images/registered/jpgs/006_reg.jpg)
+
+#### Film_007: Marksbury Ankan's office
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/007_render.jpg)  |  ![digital](media/images/optical_reduced/007.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 007
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/007_render.jpg)  |  ![digital](media/images/registered/jpgs/007_reg.jpg)
+
+#### Film_008: Parking lot from lab of Prakash
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/008_render.jpg)  |  ![digital](media/images/optical_reduced/008.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 008
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/008_render.jpg)  |  ![digital](media/images/registered/jpgs/008_reg.jpg)
+
+#### Film_009: Marksbury parking lot
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/009_render.jpg)  |  ![digital](media/images/optical_reduced/009.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 009
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/009_render.jpg)  |  ![digital](media/images/registered/jpgs/009_reg.jpg)
+
+#### Film_010: Stephen's plants
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/010_render.jpg)  |  ![digital](media/images/optical_reduced/010.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 010
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/010_render.jpg)  |  ![digital](media/images/registered/jpgs/010_reg.jpg)
+
+#### Film_011: MarksMarksbury Silvestri lab espresso machine
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/011_render.jpg)  |  ![digital](media/images/optical_reduced/011.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 011
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/011_render.jpg)  |  ![digital](media/images/registered/jpgs/011_reg.jpg)
+
+#### Film_012: SKYSCAN 1273
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/012_render.jpg)  |  ![digital](media/images/optical_reduced/012.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 012
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/012_render.jpg)  |  ![digital](media/images/registered/jpgs/012_reg.jpg)
+
+#### Film_013: Marksbury parking lot II
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/013_render.jpg)  |  ![digital](media/images/optical_reduced/013.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 013
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/013_render.jpg)  |  ![digital](media/images/registered/jpgs/013_reg.jpg)
+
+#### Film_014: Marksbury Ankan's office II
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/014_render.jpg)  |  ![digital](media/images/optical_reduced/014.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 014
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/014_render.jpg)  |  ![digital](media/images/registered/jpgs/014_reg.jpg)
+
+#### Film_015: Car in front of Marksbury
+Rendered from CT-Scan            |  Digital image
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/015_render.jpg)  |  ![digital](media/images/optical_reduced/015.jpg)
+
+Let's run the [registration script](scripts/register.sh) here:
+```shell
+scripts/register.sh --id 015
+```
+
+After registration, it looks like this:
+Rendered from CT-Scan            |  Digital image (registered)
+:-------------------------:|:-------------------------:
+![xray](media/images/volpkg_renderings/jpgs/015_render.jpg)  |  ![digital](media/images/registered/jpgs/015_reg.jpg)
