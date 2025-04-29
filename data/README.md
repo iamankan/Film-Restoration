@@ -542,3 +542,34 @@ Let us use [this script](scripts/difference.sh) to calculate the difference.
 Optical - Rendered            |  Rendered - Optical
 :-------------------------:|:-------------------------:
 ![o_r](media/images/registration-metric/error/optical_minus_rendered_015.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_015.jpg) 
+
+### Analysis
+
+In order to analyze the registration of the images, we can do a visualization and a quantitative analysis.
+
+#### Quantitative
+
+As of quantitative analysis, we can calculate the Peak Signal to Noise Ratio (PSNR), and Structural Similarity Metric (SSIM).
+
+#### Visualization
+
+As of visualization, we can calculate the difference between the two images. The way to do it is as follows:
+
+- Normalize the X-ray renderings and the registered optical images to [0,1], based on minimum/maximum values of each image.
+- Calculate the difference between the two images
+
+The best way to do this is create a python script, that takes the following arguments:
+- `--registered-path`: Path for registered images
+- `--xray-path`: Path for X-ray images
+- `--normalization (=0)`: =0 (Default) for min-max, =1 for  dynamic-range
+- `--output`: Output path for saving the differences
+- `--help`: Help options for knowing the list of arguments
+
+_Coding standard_
+
+- Create a folder named `metrics` under [scripts folder](scripts/)
+- Under this `metrics` folder, create a `metric.py` file
+
+
+Later, whene these are done, just make a package in a folder called utils. Under the utils, have a folder named `data`. Under that make a folder named `metrics`, and then use this `metric.py`
+
