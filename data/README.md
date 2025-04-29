@@ -237,6 +237,13 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/001_render.jpg)  |  ![digital](media/images/registered/jpgs/001_reg.jpg)
 
+Now, to check how good the registration is, let's use some metric to define. One of the metrics is Error. 
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_001.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_001.jpg) 
+
 
 #### Film_002: Ankan in Hardymon
 Rendered from CT-Scan            |  Digital image
@@ -252,6 +259,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/002_render.jpg)  |  ![digital](media/images/registered/jpgs/002_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_002.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_002.jpg) 
 
 #### Film_003: Mystery hands
 Rendered from CT-Scan            |  Digital image
@@ -286,6 +298,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/003_render.jpg)  |  ![digital](media/images/registered/jpgs/003_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_003.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_003.jpg) 
+
 #### Film_004: Hardymon arch window
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -300,6 +317,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/004_render.jpg)  |  ![digital](media/images/registered/jpgs/004_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_004.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_004.jpg) 
 
 #### Film_005: Prakash working
 Rendered from CT-Scan            |  Digital image
@@ -316,6 +338,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/005_render.jpg)  |  ![digital](media/images/registered/jpgs/005_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_005.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_005.jpg) 
+
 #### Film_006: Lab of Prakash
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -330,6 +357,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/006_render.jpg)  |  ![digital](media/images/registered/jpgs/006_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_006.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_006.jpg) 
 
 #### Film_007: Marksbury Ankan's office
 Rendered from CT-Scan            |  Digital image
@@ -346,6 +378,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/007_render.jpg)  |  ![digital](media/images/registered/jpgs/007_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_007.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_007.jpg) 
+
 #### Film_008: Parking lot from lab of Prakash
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -360,6 +397,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/008_render.jpg)  |  ![digital](media/images/registered/jpgs/008_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_008.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_008.jpg) 
 
 #### Film_009: Marksbury parking lot
 Rendered from CT-Scan            |  Digital image
@@ -376,6 +418,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/009_render.jpg)  |  ![digital](media/images/registered/jpgs/009_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_009.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_009.jpg) 
+
 #### Film_010: Stephen's plants
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -390,6 +437,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/010_render.jpg)  |  ![digital](media/images/registered/jpgs/010_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_010.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_010.jpg) 
 
 #### Film_011: MarksMarksbury Silvestri lab espresso machine
 Rendered from CT-Scan            |  Digital image
@@ -406,6 +458,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/011_render.jpg)  |  ![digital](media/images/registered/jpgs/011_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_011.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_011.jpg) 
+
 #### Film_012: SKYSCAN 1273
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -420,6 +477,11 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/012_render.jpg)  |  ![digital](media/images/registered/jpgs/012_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_012.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_012.jpg) 
 
 #### Film_013: Marksbury parking lot II
 Rendered from CT-Scan            |  Digital image
@@ -436,6 +498,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/013_render.jpg)  |  ![digital](media/images/registered/jpgs/013_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_013.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_013.jpg) 
+
 #### Film_014: Marksbury Ankan's office II
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -451,6 +518,11 @@ Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/014_render.jpg)  |  ![digital](media/images/registered/jpgs/014_reg.jpg)
 
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_014.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_014.jpg) 
+
 #### Film_015: Car in front of Marksbury
 Rendered from CT-Scan            |  Digital image
 :-------------------------:|:-------------------------:
@@ -465,3 +537,8 @@ After registration, it looks like this:
 Rendered from CT-Scan            |  Digital image (registered)
 :-------------------------:|:-------------------------:
 ![xray](media/images/volpkg_renderings/jpgs/015_render.jpg)  |  ![digital](media/images/registered/jpgs/015_reg.jpg)
+
+Let us use [this script](scripts/difference.sh) to calculate the difference.
+Optical - Rendered            |  Rendered - Optical
+:-------------------------:|:-------------------------:
+![o_r](media/images/registration-metric/error/optical_minus_rendered_015.jpg)  |  ![r_o](media/images/registration-metric/error/rendered_minus_optical_015.jpg) 
