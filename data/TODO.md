@@ -4,8 +4,8 @@
 - ✅ Code the `packager.sh` script to generate `*.volpkg` files 
 - ✅ Segmentation (00-015)
 - ✅ Check the orientations
-- ❌ Code the `render.sh` script
-- ❌ Image registration
+- ✅ Code the `render.sh` script
+- 🌝 Image registration
 - ❌ Rendering composites
     - ❌ Max
     - ❌ Average/Mean
