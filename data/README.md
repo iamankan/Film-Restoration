@@ -573,3 +573,59 @@ _Coding standard_
 
 Later, whene these are done, just make a package in a folder called utils. Under the utils, have a folder named `data`. Under that make a folder named `metrics`, and then use this `metric.py`
 
+### Making the data
+
+In order to make the dataset, we have to write a script (possibly, a `*.sh` script). The script is supposed to take in a `*.volpkg`, and generate a file structure for a single frame:
+
+```shell
+ID
+├── layers/          # contains `ID_00.png`, `ID_01.png`, …, `ID_13.png`
+├── match/           # contains `ID_optical.jpg`, `ID_register.tif`
+├── obj/             # contains `ID.obj`, `ID.mtl` and `ID.tif`
+├── ppm/             # contains `ID_….tif`, `*.png`, `*.ppm`
+└── render/          # contains `ID_max.tif`, `ID_mean.tif`, `ID_median.tif`
+```
+
+To generate the `*.obj` and `*.ppm`, we use the following command:
+```shell
+vc_render -v /path/to/volpkg --volume < vol-id > -s < seg-id > -o /path/to/obj/< ID >.obj --output-ppm /path/to/ppm
+```
+
+Now, that we have the `*.obj`, and the `*.ppm` files, we can generate the `layers` using the following command:
+```shell
+vc_layers_from_ppm -v /path/to/volpkg -p /path/to/ppm -o /path/to/layers -f tif
+```
+
+Now, that we have all the `*.ppm`, and `*.obj`, and the `layers`, let's generate different texture.
+
+**Generating the max filter texture**
+
+This is the default filter in `volume-cartographer`.
+```shell
+vc_render -v /path/to/volpkg --volume < vol-id > -s < seg-id > -o /path/to/render/< ID >_max.tif -f 1
+```
+
+**Generating the median filter texture**
+
+```shell
+vc_render -v /path/to/volpkg --volume < vol-id > -s < seg-id > -o /path/to/render/< ID >_median.tif -f 2
+```
+
+**Generating the average/mean filter texture**
+
+```shell
+vc_render -v /path/to/volpkg --volume < vol-id > -s < seg-id > -o /path/to/render/< ID >_avg.tif -f 3
+```
+
+While making this `*.sh` script, it is necessary to refer the orientation and the volume mapping [here](https://docs.google.com/spreadsheets/d/17_nQrxLgzphYkBBVmUhER5XiKr3EFp-bIvN7qhNYXh4/edit?gid=0#gid=0).
+
+
+So, the following arguments are needed to run the shell script:
+
+- `--volpkg`  Path to the `*.volpkg`
+- `--config`  Path to a config file that helps to run all the commands. Refer [here](https://docs.google.com/spreadsheets/d/17_nQrxLgzphYkBBVmUhER5XiKr3EFp-bIvN7qhNYXh4/edit?gid=0#gid=0)
+- `--output`  Path where the dataset would eventually end up
+- `--optical` Path to the optical images
+- `--help`    Show help for the shell script
+
+Register the images between optical and x-ray composite manually.
