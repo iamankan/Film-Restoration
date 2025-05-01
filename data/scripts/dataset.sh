@@ -46,15 +46,23 @@ if [ ! -d "$output_dir" ]; then
   mkdir $output_dir
 fi
 
+log_file="$output_dir"/"$(date +%s)".log
+
+test_str="ankan bhattacharyya"
+
+read -r -a test_args <<< "$test_str"
+for arg in "${test_args[@]}"; do
+  echo "$arg"
+done
+
 # Read the config file as CSV
 IFS=','
-tail -n +2 "$config" | while IFS=',' read -r ID Volpkg Volume Segmentation Transformation; do
+tail -n +2 "$config" | while IFS=',' read -r ID Volpkg Volume Segmentation Transformation Extra; do
   echo "ID: $ID"
   echo "Volpkg: $Volpkg"
   echo "Volume: $Volume"
   echo "Segmentation: $Segmentation"
   echo "Transformation: $Transformation"
-  echo "End of $ID"
 
   frame_id=$ID
   volpkg_name=$Volpkg
@@ -62,6 +70,13 @@ tail -n +2 "$config" | while IFS=',' read -r ID Volpkg Volume Segmentation Trans
   volume_id=$Volume
   transformation_str=$Transformation
 
+  IFS=' ' read -ra transformation_args <<< "$transformation_str"
+
+  for arg in "${transformation_args[@]}"; do
+    echo "$arg"
+  done
+
+  
   echo "Volpkg-name: $volpkg_name"
 
   id_dir=$output_dir/$frame_id
@@ -82,31 +97,26 @@ tail -n +2 "$config" | while IFS=',' read -r ID Volpkg Volume Segmentation Trans
 
   # Generate the ppm and obj
   echo "Generating ppm and obj for frame-$frame_id"
-  vc_render_cmd="vc_render -v $volpkg_dir/$volpkg_name --volume $volume_id -s $segmentation_id -o $obj_dir/$frame_id.obj --output-ppm $ppm_dir $transformation_str"
+  vc_render -v "$volpkg_dir"/"$volpkg_name" --volume "$volume_id" -s "$segmentation_id" -o "$obj_dir"/"$frame_id".obj --output-ppm "$ppm_dir"/"$frame_id".ppm  "${transformation_args[@]}">> "$log_file" 2>&1
   
-  echo $vc_render_cmd
-
   # Generating the layers
   echo "Generating the layers for frame-$frame_id"
-  vc_layers_from_ppm -v $volpkg_dir/$volpkg_name -p $ppm_dir -o $layers_dir -f tif $transformation_str
+  vc_layers_from_ppm -v "$volpkg_dir"/"$volpkg_name" -p "$ppm_dir"/"$frame_id".ppm -o "$layers_dir">> "$log_file" 2>&1
 
   # Generating max-filter texture
   echo "Generating the max-texture composite for frame-$frame_id"
-  vc_render -v $volpkg_dir/$volpkg_nam --volume $volume_id -s $segmentation_id -o $render_dir/"$frame_id"_max.tif -f 1
+  vc_render -v "$volpkg_dir"/"$volpkg_name" --volume "$volume_id" -s "$segmentation_id" -o "$render_dir"/"$frame_id"_max.tif -f 1  "${transformation_args[@]}">> "$log_file" 2>&1
 
   # Generating median-filter texture
   echo "Generating the median-texture composite for frame-$frame_id"
-  vc_render -v $volpkg_dir/$volpkg_nam --volume $volume_id -s $segmentation_id -o $render_dir/"$frame_id"_median.tif -f 2
+  vc_render -v "$volpkg_dir"/"$volpkg_name" --volume "$volume_id" -s "$segmentation_id" -o "$render_dir"/"$frame_id"_median.tif -f 2  "${transformation_args[@]}">> "$log_file" 2>&1
 
   # Generating average-filter texture
   echo "Generating the average-texture composite for frame-$frame_id"
-  vc_render -v $volpkg_dir/$volpkg_nam --volume $volume_id -s $segmentation_id -o $render_dir/"$frame_id"_avg.tif -f 3
+  vc_render -v "$volpkg_dir"/"$volpkg_name" --volume "$volume_id" -s "$segmentation_id" -o "$render_dir"/"$frame_id"_avg.tif -f 3  "${transformation_args[@]}">> "$log_file" 2>&1
 
   # Copying the optical image
   echo "Copying the optical image"
   cp $optical_dir/$frame_id.jpg $match_dir/"$frame_id".jpg
-
-  break
-
 
 done
