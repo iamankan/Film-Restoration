@@ -5,22 +5,22 @@
 - ✅ Segmentation (00-015)
 - ✅ Check the orientations
 - ✅ Code the `render.sh` script
-- 🌝 Image registration
-- ❌ Rendering composites
-    - ❌ Max
-    - ❌ Average/Mean
-    - ❌ Median
+- ✅ Image registration
+- ✅ Rendering composites
+    - ✅ Max
+    - ✅ Average/Mean
+    - ✅ Median
 - ❌ Make the [`Dataset`](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html) for machine learning usage and publishing
 - ❌ Calculate the following quality assesment metrics between the rendered image and the digital image:
     - ❌ Peak Signal-to-Noise Ratio (PSNR)
     - ❌ Structural Similarity Metric (SSIM)
     - ❌ Mean Absolute Error (MAE)
-    - ❌ Mean Squared Error (MSE)
+    - ❌ Mean Squared Error (MSE) - By doing normalization locally (max/min)
 - ❌ Map the pixel intensity after registration between digital image and the rendered image for:
     - ❌ Max
     - ❌ Average/Mean
     - ❌ Median
-- ❌ Make a shell script to produce the data in the following format:
+- ✅ Make a [shell script](scripts/dataset.sh) to produce the data in the following format:
     ```shell
     IlfordBW
     ├── ID
