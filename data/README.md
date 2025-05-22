@@ -629,3 +629,28 @@ So, the following arguments are needed to run the shell script:
 - `--help`    Show help for the shell script
 
 Register the images between optical and x-ray composite manually.
+
+## Analysis of the data
+
+The analysis of the data has to be done to understand what we are getting into. so, first let's do a principle component analysis (PCA) over all the layers. Then we compare it with the registered optical image and the different filters.
+
+The script for doing the PCA in batch is [here](scripts/run_pca.sh). The way to run it is:
+```shell
+data/scripts/run_pca.sh -i /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/dataset/all_renamed/L15/
+```
+### Film 001: PCA with max-filter
+PCA_000            |  Max filter
+:-------------------------:|:-------------------------:
+![xray](media/images/pca/001/pca_000_enhanced.jpg)  |  ![digital](media/images/pca/001/001_max_enhanced.jpg)
+
+The folds we see on the max-filter on the left side of the image is very less prominent in the first component of the PCA.
+
+So, the mapping between the first principal component and the optical image is like this:
+PCA_000            |  Optical image
+:-------------------------:|:-------------------------:
+![xray](media/images/pca/001/pca_000_enhanced.jpg)  |  ![digital](media/images/pca/001/001_registered.jpg)
+
+So, the mapping between the max-filter composite and the optical image is like this:
+Max filter            |  Optical image
+:-------------------------:|:-------------------------:
+![xray](media/images/pca/001/001_max_enhanced.jpg)  |  ![digital](media/images/pca/001/001_registered.jpg)
