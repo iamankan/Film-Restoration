@@ -6,14 +6,19 @@ from sklearn.decomposition import PCA
 from einops import rearrange
 from natsort import natsorted
 
+import logging
+logger = logging.getLogger(__name__)
+
 def __pca__(input: Path, output: Path) -> None:
+    logger.info("PCA started!")
+
     images = natsorted([i for i in input.iterdir()])
-    print(f"Input images: {images}")
+    logger.debug(images)
 
     # Step 1: Read images into numpy array
     np_images = np.array([iio.imread(image) for image in images])
-    print(f"Original shape: {np_images.shape}")  # (n, h, w)
-
+    logger.debug(np_images.shape)
+    
 
     # Step 3: Flatten each image
     n, h, w = np_images.shape
@@ -22,7 +27,6 @@ def __pca__(input: Path, output: Path) -> None:
     # Step 4: PCA
     pca = PCA(n_components=n)
     pca_transform = pca.fit_transform(np_images_flatten)
-    # pca_transform = pca_fit.transform(np_images_flatten)
 
     pca_transform = rearrange(pca_transform, '(h w) c -> c h w', c=n, h=h, w=w)
 
@@ -30,10 +34,10 @@ def __pca__(input: Path, output: Path) -> None:
 
     output.mkdir(parents=True, exist_ok=True)
 
-    [iio.imwrite(f'{output}/pca_{i}.tif', x) for i,x in enumerate(pca_transform)]
+    [iio.imwrite(f'{output}/pca_{i:03d}.tif', x) for i,x in enumerate(pca_transform)]
+
+    logger.info("PCA done!")
     
-
-
 
 def main():
     """
@@ -42,6 +46,11 @@ def main():
     parser = argparse.ArgumentParser(description='This is the main function. From this function it takes some arguments to calculate and give back pca.')
     parser.add_argument('-i', '--input', help='Directory of the input images.', type=Path, required=True)
     parser.add_argument('-o', '--output', help='Destination folder where the pca files will be stored.', required=True, type=Path)
+    parser.add_argument(
+        '-d', '--debug',
+        help="Print lots of debugging statements",
+        action="store_const", dest="loglevel", const=logging.DEBUG
+    )
     # parser.add_argument('-n','--number-of-components', help='Number of principle components required. If not provided, it will take the number of images by default.', required=False, type=int)
     args = parser.parse_args()
     input = args.input

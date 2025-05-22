@@ -28,4 +28,4 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/optical/${ID}.jpg -f /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/xray_render/edited/tif/${ID}_render.tif -o /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/registered/${ID}_reg.tif
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/optical/${ID}.jpg -f /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/xray_render/edited/tif/${ID}_render.tif -o /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/registered/${ID}_registered.tif
