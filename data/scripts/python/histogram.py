@@ -6,6 +6,7 @@ import math
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import pickle
 
 
 def __draw_histogram__(histogram_dict: dict, output=None, bit_depths=[8, 12, 16]):
@@ -154,7 +155,7 @@ def __histogram__(frame_path: Path):
             image_path = pca
             histogram_dict['pca'][idx] = __make_histogram__(name=name, image_path=image_path)
     
-    # Finally, LEt's do the registered optical image
+    # Finally, Let's do the registered optical image
     optical_dir = frame_path / 'match'
     name = f'ID:{frame_id}|OPTICAL_REGISTERED'
     image_path = optical_dir / f'{frame_id}_registered.tif'
@@ -176,12 +177,14 @@ def __draw__(histogram_dictionary: dict, output_path: Path):
         parent_keys = histogram_dictionary.keys()
         for parent_key in parent_keys:
             child_keys = histogram_dictionary[parent_key].keys()
-            for child_key in child_keys:
-                __draw_histogram__(histogram_dict=histogram_dictionary[parent_key][child_key], output=output_path)
+            if len(child_keys)>0:
+                for child_key in child_keys:
+                    __draw_histogram__(histogram_dict=histogram_dictionary[parent_key][child_key], output=output_path)
     else:
         print(f'Provide output path.')
 
-    
+
+
 
 
 def main():
@@ -190,15 +193,13 @@ def main():
     parser.add_argument('--output','-o', required=True, type=str, help="Save the histogram")
     args = parser.parse_args()
     frame_path = Path(args.input)
+    frame_id = frame_path.stem
     output_path = Path(args.output)
     output_path.mkdir(parents=True, exist_ok=True)
     histogram_dict = __histogram__(frame_path=frame_path)
-    __draw__(histogram_dictionary=histogram_dict, output_path=output_path)
-
-
-
-    
-
+    # __draw__(histogram_dictionary=histogram_dict, output_path=output_path)
+    with open(f'{frame_path}/{frame_id}_histogram.pkl', 'wb') as f:
+        pickle.dump(histogram_dict, f)
 
 if __name__ == "__main__":
     main()
