@@ -663,8 +663,7 @@ Let's create a histogram seperately for `PCA_000`, `[id]_max` and `[id]_register
 
 To create the histogram, we can make a structure first. Then we can just call that for plotting for every frame in the datset. For example, for an `id`, say `001`, we can have the following structure:
 ```javascript
-{
-  '001':{
+  {
     'layers':{
       'layer_0':{
         'name':'layer_0',
@@ -736,17 +735,16 @@ To create the histogram, we can make a structure first. Then we can just call th
     },
     'optical':{
       'registered':{
-        'name':'optical_registered',
-        'image':'/path/to/image',
-        'histogram':{
-          '8-bit':[...],
-          '12-bit':[...],
-          '16-bit':[...]
-        }
+          'name':'optical_registered',
+          'image':'/path/to/image',
+          'histogram':{
+              '8-bit':{'histogram': [...], 'bin': [...]},
+              '12-bit':{'histogram': [...], 'bin': [...]},
+              '16-bit':{'histogram': [...], 'bin': [...]}
+          }
       }
     }
-  },...
-}
+  }
 ```
 
 So, basically the building block for the histogram to the function should be:
