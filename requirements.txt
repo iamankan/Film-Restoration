@@ -3,3 +3,6 @@ imageio
 natsort
 numpy
 scikit-learn
+seaborn
+matplotlib
+pandas

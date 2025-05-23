@@ -630,7 +630,9 @@ So, the following arguments are needed to run the shell script:
 
 Register the images between optical and x-ray composite manually.
 
-## Analysis of the data
+# Analysis of the data
+
+## Principal Component Analysis (PCA)
 
 The analysis of the data has to be done to understand what we are getting into. so, first let's do a principle component analysis (PCA) over all the layers. Then we compare it with the registered optical image and the different filters.
 
@@ -654,3 +656,110 @@ So, the mapping between the max-filter composite and the optical image is like t
 Max filter            |  Optical image
 :-------------------------:|:-------------------------:
 ![xray](media/images/pca/001/001_max_enhanced.jpg)  |  ![digital](media/images/pca/001/001_registered.jpg)
+
+## Histogram
+
+Let's create a histogram seperately for `PCA_000`, `[id]_max` and `[id]_registered`. Let's use [NumPy histogram](https://numpy.org/devdocs/reference/generated/numpy.histogram.html).
+
+To create the histogram, we can make a structure first. Then we can just call that for plotting for every frame in the datset. For example, for an `id`, say `001`, we can have the following structure:
+```javascript
+{
+  '001':{
+    'layers':{
+      'layer_0':{
+        'name':'layer_0',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },
+      'layer_1':{
+        'name':'layer_1',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },...
+    },
+    'filters':{
+      'max':{
+        'name':'max_filter',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },
+      'avg':{
+        'name':'avg_filter',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },
+      'median':{
+        'name':'median_filter',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      }
+    },
+    'pca':{
+      'pca_000':{
+        'name':'pca_000',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },
+      'pca_001':{
+        'name':'pca_001',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      },...
+    },
+    'optical':{
+      'registered':{
+        'name':'optical_registered',
+        'image':'/path/to/image',
+        'histogram':{
+          '8-bit':[...],
+          '12-bit':[...],
+          '16-bit':[...]
+        }
+      }
+    }
+  },...
+}
+```
+
+So, basically the building block for the histogram to the function should be:
+```javascript
+{
+  'name':'optical_registered',
+  'image':'/path/to/image',
+  'histogram':{
+    '8-bit':[...],
+    '12-bit':[...],
+    '16-bit':[...]
+  }
+}
+```
+
+Once a function recieves this dictionary, it should be able to print the histogram. So, the first task will be to create a histogram from an image. Then we need to have afucntion that will generate the histogram(s), too. Once that is done, the `pathlib` can come into action and perform the magic. All these will be in [histogram.py](scripts/python/histogram.py).
