@@ -6,7 +6,8 @@ print_help() {
   echo ""
   echo "Description:"
   echo "  This script iterates through each subdirectory (assumed to be sample IDs) inside the input folder"
-  echo "  and runs PCA on the 'layers' directory of each ID. The results are saved in a 'pca' subfolder."
+  echo "  and runs histograms on the 'layers', 'filters', 'optical image' and 'PCA' (if available) directory of each ID."
+  echo "  The results are saved in a 'pca' subfolder."
   echo ""
   echo "Required Arguments:"
   echo "  -i    Path to the input folder containing subfolders named by ID"
@@ -16,7 +17,7 @@ print_help() {
   echo ""
   echo "Example:"
   echo "  $0 -i /path/to/data"
-  echo "    Runs: python3 data/scripts/python/pca.py -i /path/to/data/<ID>/layers/ -o /path/to/data/<ID>/pca"
+  echo "    Runs: python3 data/scripts/python/histogram.py -i /path/to/data/<ID> -o /path/to/data/<ID>/histogram"
   echo ""
   exit 0
 }
@@ -60,11 +61,11 @@ fi
 
 # Iterate through subdirectories (assumed to be IDs)
 for id_dir in "$INPUT_FOLDER"/*; do
-  if [ -d "$id_dir" ]; then
+  if [ -d "$id_dir" ] && [[ "$(basename "$id_dir")" != ._* ]]; then
     id=$(basename "$id_dir")
-    input_path="$id_dir/layers"
-    output_path="$id_dir/pca"
+    input_path="$id_dir"
+    output_path="$id_dir/histogram"
     echo "Processing ID: $id"
-    python3 data/scripts/python/pca.py -i "$input_path" -o "$output_path"
+    python3 data/scripts/python/histogram.py -i "$input_path" -o "$output_path"
   fi
 done

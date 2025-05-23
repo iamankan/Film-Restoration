@@ -8,6 +8,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pickle
 
+import matplotlib
+matplotlib.use("Agg")
+
 
 def __draw_histogram__(histogram_dict: dict, output=None, bit_depths=[8, 12, 16]):
     name = histogram_dict.get('name')
@@ -54,12 +57,12 @@ def __draw_histogram__(histogram_dict: dict, output=None, bit_depths=[8, 12, 16]
             ax.axis('off')
 
     plt.tight_layout()
-    if output:
-        output_file = f'{output}/{name}.png'
-        plt.savefig(output_file, dpi=300, bbox_inches="tight")
-        print(f"Saved as {output_file}")
-    else:
-        plt.show()
+
+    output_file = f'{output}/{name}.png'
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")
+    print(f"Saved as {output_file}")
+        
+    plt.close(fig=fig)
 
 
 def __get_histogram__(img: np.ndarray, bit_depth: int=8):
@@ -126,24 +129,24 @@ def __histogram__(frame_path: Path):
     # Let's start with layers
     layers_dir = frame_path / 'layers'
     for idx, layer in enumerate(layers_dir.iterdir()):
-        name = f'ID:{frame_id}|Layer_{idx:03d}'
+        name = f'{frame_id}_Layer_{idx:03d}'
         image_path = layer
         histogram_dict['layers'][idx] = __make_histogram__(name=name, image_path=image_path)
 
     # Let's do filters
     filter_dir = frame_path / 'render'
     # MAX - filter
-    name_max = f'ID:{frame_id}|Filter_MAX'
+    name_max = f'{frame_id}_Filter_MAX'
     image_path_max = filter_dir / f'{frame_id}_max.tif'
     histogram_dict['filters']['max'] = __make_histogram__(name=name_max, image_path=image_path_max)
 
     # AVG - filter
-    name_avg = f'ID:{frame_id}|Filter_AVG'
+    name_avg = f'{frame_id}_Filter_AVG'
     image_path_avg = filter_dir / f'{frame_id}_avg.tif'
     histogram_dict['filters']['avg'] = __make_histogram__(name=name_avg, image_path=image_path_avg)
 
     # MEDIAN - filter
-    name_median = f'ID:{frame_id}|Filter_MEDIAN'
+    name_median = f'{frame_id}_Filter_MEDIAN'
     image_path_median = filter_dir / f'{frame_id}_median.tif'
     histogram_dict['filters']['median'] = __make_histogram__(name=name_median, image_path=image_path_median)
 
@@ -151,13 +154,13 @@ def __histogram__(frame_path: Path):
     pca_dir = frame_path / 'pca'
     if pca_dir.exists():
         for idx, pca in enumerate(pca_dir.iterdir()):
-            name = f'ID:{frame_id}|PCA_{idx:03d}'
+            name = f'{frame_id}|PCA_{idx:03d}'
             image_path = pca
             histogram_dict['pca'][idx] = __make_histogram__(name=name, image_path=image_path)
     
     # Finally, Let's do the registered optical image
     optical_dir = frame_path / 'match'
-    name = f'ID:{frame_id}|OPTICAL_REGISTERED'
+    name = f'{frame_id}_OPTICAL_REGISTERED'
     image_path = optical_dir / f'{frame_id}_registered.tif'
     histogram_dict['optical']['registered'] = __make_histogram__(name=name, image_path=image_path)
 
@@ -197,7 +200,7 @@ def main():
     output_path = Path(args.output)
     output_path.mkdir(parents=True, exist_ok=True)
     histogram_dict = __histogram__(frame_path=frame_path)
-    # __draw__(histogram_dictionary=histogram_dict, output_path=output_path)
+    __draw__(histogram_dictionary=histogram_dict, output_path=output_path)
     with open(f'{frame_path}/{frame_id}_histogram.pkl', 'wb') as f:
         pickle.dump(histogram_dict, f)
 
