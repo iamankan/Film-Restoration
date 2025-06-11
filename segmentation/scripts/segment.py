@@ -256,15 +256,6 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
         pathlen = 0
         start = (0,0)
         end = (0,0)
-        # for i, _ in enumerate(endpoints):
-        #     for j, _ in enumerate(endpoints):
-        #         if i != j:
-        #             q = shortest_path_length(binary, endpoints[i], endpoints[j])
-        #             if q >= pathlen:
-        #                 pathlen = q
-        #                 start = endpoints[i]
-        #                 end = endpoints[j]
-
         for p1, p2 in combinations(endpoints, 2):
             q = shortest_path_length(binary, p1, p2)
             if q >= pathlen:
@@ -275,12 +266,16 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
         cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
         cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
         cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
-
-        # shortestpath = shortest_path_skeleton(skeleton=binary, start=start, end=end)
+        
         shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
-        print(f'Length of the shortest path between start and end is: {shortestdist} pixels')
-        for sp in shortestpath:
-            cv2.circle(color_overlay, (sp[1], sp[0]), 1, (255,255,0),1)
+        print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
+        with open(f'{save_at}/segmented_component_{idx}.txt', 'w') as f:
+            f.write(f'x,y\n')
+            for spidx, sp in enumerate(shortestpath):
+                cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
+                f.write(f'{sp[1]},{sp[0]}\n')
+            f.write(f'Cost: {shortestdist}')
+
         if cv_show:
             cv2.imshow(f"Component {idx} - Skeleton Overlay", color_overlay)
             cv2.waitKey(cv_wait_key_val)
