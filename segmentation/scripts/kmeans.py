@@ -187,10 +187,12 @@ def is_y_branch_point(x, y, img):
 
     return transitions >= 3
 
-def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: int, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
+'''
+python3 segmentation/scripts/kmeans.py -s /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26855.volpkg/volumes/20250214115505/1000.tif -k 3 -n 100
+'''
+
+def thin(original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, cluster_mask: np.array, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
     
-
-
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
     img_max = original_image[:, :, 0].max()
@@ -200,9 +202,19 @@ def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: i
 
     center_point = (cy//2, cx//2)
     
+    _, binary = cv2.threshold(clustered, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     skeleton = cv2.ximgproc.thinning(binary)
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
+    print(f"Total components: {num_labels} (including background).")
+    if save_at:
+        save_at_cluster = Path(save_at) / f'cluster_{cluster_id}'
+        save_at_cluster.mkdir(parents=True, exist_ok=True)
+        colored_path = np.zeros_like(original_image)
+        cv2.imwrite(f'{save_at_cluster}/original_image.jpg', original_image)
+        cv2.imwrite(f'{save_at_cluster}/cluster_mask.jpg', cluster_mask)
+        cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
+    
 
     for idx in range(1, num_labels):  # skip background
         component_mask = (labels == idx).astype(np.uint8)
@@ -210,11 +222,13 @@ def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: i
         endpoints = find_endpoints(component_mask=component_mask)
         
         num_points = cv2.countNonZero(component_mask)
-        print(f"\nComponent {idx}: {num_points} points")
 
         if num_points < num_seg_points:
-            print(f"Number of points less than {num_seg_points}. Skipping component.")
+            # print(f"Number of points less than {num_seg_points}. Skipping component.")
             continue
+
+        print(f"\nComponent {idx} (Cluster: {cluster_id}): {num_points} points")
+
 
         y_branch_points = []
         padded = np.pad(component_mask, 1, mode='constant')
@@ -258,12 +272,11 @@ def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: i
         print(f'Start: {start}, End: {end}')
         cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
         cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
-        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
         
         shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
         if save_at:
-            with open(f'{save_at}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
+            with open(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
                 f.write(f'x,y\n')
                 for spidx, sp in enumerate(shortestpath):
                     cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
@@ -272,19 +285,27 @@ def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: i
         else:
             for spidx, sp in enumerate(shortestpath):
                 cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
+                
+        colored_path = cv2.bitwise_xor(colored_path, color_overlay)
+        
+
+        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
 
         if cv_show:
-            cv2.imshow(f"Component {idx} - Skeleton Overlay", color_overlay)
+            cv2.imshow(f"Cluster {cluster_id} | Component {idx} - Skeleton Overlay", color_overlay)
             cv2.waitKey(cv_wait_key_val)
 
         if save_at:
-            cv2.imwrite(f'{save_at}/segmented_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
+            cv2.imwrite(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
+    
+    if save_at:
+        cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
+        cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_cluster{cluster_id}.jpg', img=colored_path)
 
-    print("Press any key to exit the program!")
-    cv2.waitKey(cv_wait_key_val)
-    cv2.destroyAllWindows()
+    
+    
 
-def kmeans(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
+def kmeans(film_slice: str, output_folder: str, threshold_factor:float=2.0, cv_show: bool=True, cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -292,16 +313,22 @@ def kmeans(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key:
         print(f"Saving things at {save_at}")
         save_at.mkdir(parents=True, exist_ok=True)
         with open(f'{save_at}/details.txt', 'w') as fid:
-            fid.write(f'Film slice: {film_slice}\nnumber of clusters: {number_of_clusters}\n max_num_of_seg_points: {num_seg_points}\n')
+            fid.write(f'KMEANS->Thinning\nFilm slice: {film_slice}\nthreshold factor: {threshold_factor}\nnumber of clusters: {number_of_clusters}\n max_num_of_seg_points: {num_seg_points}\n')
     else:
         print(f"Nothing is being saved. So, you will see the outputs. And press a key after every output to see the next.")
         cv_show = True
         cv_wait_key = True
+        save_at = None
 
     if cv_wait_key:
         cv_wait_key_val = 0 # Wait if true
     else:
         cv_wait_key_val = 1 # Don't wait if false
+
+    original_image = cv2.imread(film_slice)
+    if original_image is None:
+        print("Failed to load original image.")
+        return
 
     img = cv2.imread(film_slice, cv2.IMREAD_GRAYSCALE)
     if img is None:
@@ -320,6 +347,7 @@ def kmeans(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key:
     for cluster_id in range(number_of_clusters):
         mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
         cluster_img = cv2.bitwise_and(img, img, mask=mask)
+        print(f'cluster_img shape: {cluster_img.shape}')
 
         plt.figure()
         plt.title(f"Cluster {cluster_id}")
@@ -334,11 +362,24 @@ def kmeans(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key:
 
     plt.show()
 
+    for cluster_id in range(number_of_clusters):
+        mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
+        cluster_img = cv2.bitwise_and(img, img, mask=mask)
+        print(f"Starting thinning for cluster {cluster_id}")
+        thin(original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
+             cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask)
+    
+    print("Press any key to exit the program!")
+    cv2.waitKey(cv_wait_key_val)
+    cv2.destroyAllWindows()
+
+
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input-slice', '-s', help="Path to the first slice.", type=str)
+    parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
     parser.add_argument('--number-of-clusters', '-k', help="Number of clusters you are expecting. DEFAULT=3", type=int, default=3)
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
     parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. Default: Nothing will be saved", type=str)
@@ -346,6 +387,7 @@ def main():
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
     film_slice = args.input_slice
+    threshold_factor = args.threshold_factor
     number_of_clusters = args.number_of_clusters
     num_seg_points = args.num_seg_points
     output_folder = args.output_folder
@@ -356,8 +398,8 @@ def main():
     if number_of_clusters==0:
         print("Number of clusters cannot be zero.")
         return
-    kmeans(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
-         cv_show=cv_show)
+    kmeans(film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
+           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor)
 
 
 if __name__ == "__main__":
