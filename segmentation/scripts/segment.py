@@ -14,6 +14,7 @@ from collections import deque
 import heapq
 from math import sqrt 
 import uuid
+from itertools import combinations
 
 
 def euclidean(p1, p2):
@@ -255,14 +256,20 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
         pathlen = 0
         start = (0,0)
         end = (0,0)
-        for i, _ in enumerate(endpoints):
-            for j, _ in enumerate(endpoints):
-                if i != j:
-                    q = shortest_path_length(binary, endpoints[i], endpoints[j])
-                    if q >= pathlen:
-                        pathlen = q
-                        start = endpoints[i]
-                        end = endpoints[j]
+        # for i, _ in enumerate(endpoints):
+        #     for j, _ in enumerate(endpoints):
+        #         if i != j:
+        #             q = shortest_path_length(binary, endpoints[i], endpoints[j])
+        #             if q >= pathlen:
+        #                 pathlen = q
+        #                 start = endpoints[i]
+        #                 end = endpoints[j]
+
+        for p1, p2 in combinations(endpoints, 2):
+            q = shortest_path_length(binary, p1, p2)
+            if q >= pathlen:
+                pathlen = q
+                start, end = p1, p2
         
         print(f'Start: {start}, End: {end}')
         cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
