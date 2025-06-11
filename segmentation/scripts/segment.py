@@ -10,6 +10,88 @@ from scipy.ndimage import convolve
 import networkx as ntx
 from scipy.spatial.distance import euclidean
 matplotlib.use('TkAgg')
+from collections import deque
+import heapq
+from math import sqrt 
+
+
+def euclidean(p1, p2):
+    return sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+def dijkstra_cheapest_path(skeleton, start, end, center_point):
+    h, w = skeleton.shape
+    visited = np.zeros_like(skeleton, dtype=bool)
+    dist = np.full(skeleton.shape, np.inf)
+    parent = dict()
+
+    dist[start] = euclidean(start, center_point)
+    heap = [(dist[start], start)]
+
+    neighbors = [(-1, -1), (-1, 0), (-1, 1),
+                 (0, -1),           (0, 1),
+                 (1, -1),  (1, 0),  (1, 1)]
+
+    while heap:
+        cost, (y, x) = heapq.heappop(heap)
+        if visited[y, x]:
+            continue
+        visited[y, x] = True
+
+        if (y, x) == end:
+            # Reconstruct path
+            path = []
+            while (y, x) != start:
+                path.append((y, x))
+                y, x = parent[(y, x)]
+            path.append(start)
+            path.reverse()
+            return path, dist[end]
+
+        for dy, dx in neighbors:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w and skeleton[ny, nx] > 0:
+                new_cost = cost + euclidean((ny, nx), center_point)
+                if new_cost < dist[ny, nx]:
+                    dist[ny, nx] = new_cost
+                    parent[(ny, nx)] = (y, x)
+                    heapq.heappush(heap, (new_cost, (ny, nx)))
+
+    return None, np.inf
+
+def shortest_path_skeleton(skeleton, start, end):
+    h, w = skeleton.shape
+    visited = np.zeros_like(skeleton, dtype=bool)
+    parent = dict()
+
+    queue = deque([start])
+    visited[start] = True
+
+    # 8-connected neighbors
+    neighbors = [(-1, -1), (-1, 0), (-1, 1),
+                 (0, -1),           (0, 1),
+                 (1, -1),  (1, 0),  (1, 1)]
+
+    while queue:
+        y, x = queue.popleft()
+        if (y, x) == end:
+            # Reconstruct path from end to start
+            path = []
+            while (y, x) != start:
+                path.append((y, x))
+                y, x = parent[(y, x)]
+            path.append(start)
+            path.reverse()
+            return path
+
+        for dy, dx in neighbors:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
+                    visited[ny, nx] = True
+                    parent[(ny, nx)] = (y, x)
+                    queue.append((ny, nx))
+
+    return None  # no path found
 
 def find_endpoints(component_mask):
     endpoints = []
@@ -22,7 +104,7 @@ def find_endpoints(component_mask):
                 # Count 8 neighbors
                 neighbors = [
                     padded[y-1, x-1], padded[y-1, x], padded[y-1, x+1],
-                    padded[y, x-1],              
+                    padded[y, x-1],             
                     padded[y, x+1],
                     padded[y+1, x-1], padded[y+1, x], padded[y+1, x+1]
                 ]
@@ -30,6 +112,57 @@ def find_endpoints(component_mask):
                     # Exactly one neighbor → endpoint
                     endpoints.append((y-1, x-1))  # remove padding offset
     return endpoints
+
+def shortest_path_length(skeleton, start, end):
+    h, w = skeleton.shape
+    visited = np.zeros_like(skeleton, dtype=bool)
+    dist = np.full_like(skeleton, -1, dtype=int)  # distance array
+
+    queue = deque([start])
+    visited[start] = True
+    dist[start] = 0
+
+    neighbors = [(-1, -1), (-1, 0), (-1, 1),
+                 (0, -1),           (0, 1),
+                 (1, -1),  (1, 0),  (1, 1)]
+
+    while queue:
+        y, x = queue.popleft()
+        if (y, x) == end:
+            return dist[end]  # shortest path length
+
+        for dy, dx in neighbors:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
+                    visited[ny, nx] = True
+                    dist[ny, nx] = dist[y, x] + 1
+                    queue.append((ny, nx))
+    return -1  # no path found
+
+def is_path_between_points(skeleton, start, end):
+    h, w = skeleton.shape
+    visited = np.zeros_like(skeleton, dtype=bool)
+    queue = deque([start])
+    visited[start] = True
+    
+    # 8-connected neighbors relative positions
+    neighbors = [(-1, -1), (-1, 0), (-1, 1),
+                 (0, -1),           (0, 1),
+                 (1, -1),  (1, 0),  (1, 1)]
+    
+    while queue:
+        y, x = queue.popleft()
+        if (y, x) == end:
+            return True
+        
+        for dy, dx in neighbors:
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
+                    visited[ny, nx] = True
+                    queue.append((ny, nx))
+    return False
 
 
 def is_y_branch_point(x, y, img):
@@ -65,17 +198,18 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
 
     cy, cx, _ = img.shape
 
-    center_point = (cx//2, cy//2)
+    center_point = (cy//2, cx//2)
 
     _, binary = cv2.threshold(img[:, :, 0], (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     skeleton = cv2.ximgproc.thinning(binary)
 
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(skeleton, connectivity=8)
+    num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
 
     for i in range(1, num_labels):  # skip background
         component_mask = (labels == i).astype(np.uint8)
-        end_points = find_endpoints(component_mask=component_mask)
-        print(f'Endpoints: {end_points}')
+
+        endpoints = find_endpoints(component_mask=component_mask)
+        
         num_points = cv2.countNonZero(component_mask)
         print(f"\nComponent {i}: {num_points} points")
 
@@ -107,14 +241,29 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
         for yidx, yb in enumerate(y_branch_points):
             cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green 
         
-        for epidx, ep in enumerate(end_points):
-            cv2.circle(color_overlay, (ep[1], ep[0]), 2+epidx, (0,0,255), 5) # red 
-                
+        pathlen = 0
+        start = (0,0)
+        end = (0,0)
+        for i, _ in enumerate(endpoints):
+            for j, _ in enumerate(endpoints):
+                if i != j:
+                    q = shortest_path_length(binary, endpoints[i], endpoints[j])
+                    if q >= pathlen:
+                        pathlen = q
+                        start = endpoints[i]
+                        end = endpoints[j]
+        
+        print(f'Start: {start}, End: {end}')
+        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
+
+        # shortestpath = shortest_path_skeleton(skeleton=binary, start=start, end=end)
+        shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
+        print(f'Length of the shortest path between start and end is: {shortestdist} pixels')
+        for sp in shortestpath:
+            cv2.circle(color_overlay, (sp[1], sp[0]), 2, (255,255,0),2)
 
 
-
-
-        cv2.imshow(f"Component {i} - Pruned Skeleton Overlay", color_overlay)
+        cv2.imshow(f"Component {i} - Skeleton Overlay", color_overlay)
         cv2.waitKey(0)
 
     cv2.destroyAllWindows()
