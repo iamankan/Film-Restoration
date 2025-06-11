@@ -1,0 +1,5 @@
+opencv-python
+imageio
+matplotlib
+opencv-contrib-python
+networkx
