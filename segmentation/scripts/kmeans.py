@@ -187,40 +187,19 @@ def is_y_branch_point(x, y, img):
 
     return transitions >= 3
 
-def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, threshold_factor: float = 2.0, num_seg_points: int = 1000):
+def thin(original_image: np.array, binary: np.array, save_at: str, cluster_id: int, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
     
-    if output_folder:
-        uuid_id = str(uuid.uuid4())
-        save_at = Path(output_folder) / uuid_id
-        print(f"Saving things at {save_at}")
-        save_at.mkdir(parents=True, exist_ok=True)
-        with open(f'{save_at}/details.txt', 'w') as fid:
-            fid.write(f'Film slice: {film_slice}\nthreshold-factor: {threshold_factor}\nmax_num_of_seg_points: {num_seg_points}\n')
-    else:
-        print(f"Nothing is being saved. So, you will see the outputs. And press a key after every output to see the next.")
-        cv_show = True
-        cv_wait_key = True
 
-    if cv_wait_key:
-        cv_wait_key_val = 0 # Wait if true
-    else:
-        cv_wait_key_val = 1 # Don't wait if false
 
-    img = cv2.imread(film_slice)
-    if img is None:
-        print(f"Error: Could not load image {film_slice}")
-        return
-
-    print(f'Shape of the film slice is: {img.shape}')
-    img_min = img[:, :, 0].min()
-    img_max = img[:, :, 0].max()
+    print(f'Shape of the film slice is: {original_image.shape}')
+    img_min = original_image[:, :, 0].min()
+    img_max = original_image[:, :, 0].max()
     print(f'min: {img_min}, max: {img_max}')
 
-    cy, cx, _ = img.shape
+    cy, cx, _ = original_image.shape
 
     center_point = (cy//2, cx//2)
-
-    _, binary = cv2.threshold(img[:, :, 0], (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    
     skeleton = cv2.ximgproc.thinning(binary)
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
@@ -247,18 +226,18 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
                     y_branch_points.append((x - 1, y - 1))
 
         if len(y_branch_points) > 0:
-            print(f"Component {idx} contains Y-branching structure ({len(y_branch_points)} Y-points).")
-            if output_folder:
+            print(f"Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).")
+            if save_at:
                 with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f'Component {idx} contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
+                    fid.write(f'Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
         else:
-            print(f"Component {idx} has no Y-junctions.")
-            if output_folder:
+            print(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
+            if save_at:
                 with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f"Component {idx} has no Y-junctions.")
+                    fid.write(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
 
         # Draw pruned skeleton on original image as green dots
-        color_overlay = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2RGB)
+        color_overlay = cv2.cvtColor(original_image.copy(), cv2.COLOR_BGR2RGB)
 
         ys, xs = np.where(component_mask == 1)
         for (y, x) in zip(ys, xs):
@@ -283,8 +262,8 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
         
         shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
-        if output_folder:
-            with open(f'{save_at}/segmented_component_{idx}.txt', 'w') as f:
+        if save_at:
+            with open(f'{save_at}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
                 f.write(f'x,y\n')
                 for spidx, sp in enumerate(shortestpath):
                     cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
@@ -298,9 +277,10 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
             cv2.imshow(f"Component {idx} - Skeleton Overlay", color_overlay)
             cv2.waitKey(cv_wait_key_val)
 
-        if output_folder:
-            cv2.imwrite(f'{save_at}/segmented_component_{idx}.jpg', img=color_overlay)
+        if save_at:
+            cv2.imwrite(f'{save_at}/segmented_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
 
+    print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
     cv2.destroyAllWindows()
 
