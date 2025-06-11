@@ -15,6 +15,7 @@ import heapq
 from math import sqrt 
 import uuid
 from itertools import combinations
+from sklearn.cluster import KMeans
 
 
 def euclidean(p1, p2):
@@ -186,7 +187,6 @@ def is_y_branch_point(x, y, img):
 
     return transitions >= 3
 
-
 def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, threshold_factor: float = 2.0, num_seg_points: int = 1000):
     
     if output_folder:
@@ -301,31 +301,82 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
         if output_folder:
             cv2.imwrite(f'{save_at}/segmented_component_{idx}.jpg', img=color_overlay)
 
-    print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
     cv2.destroyAllWindows()
+
+def kmeans(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
+    
+    if output_folder:
+        uuid_id = str(uuid.uuid4())
+        save_at = Path(output_folder) / uuid_id
+        print(f"Saving things at {save_at}")
+        save_at.mkdir(parents=True, exist_ok=True)
+        with open(f'{save_at}/details.txt', 'w') as fid:
+            fid.write(f'Film slice: {film_slice}\nnumber of clusters: {number_of_clusters}\n max_num_of_seg_points: {num_seg_points}\n')
+    else:
+        print(f"Nothing is being saved. So, you will see the outputs. And press a key after every output to see the next.")
+        cv_show = True
+        cv_wait_key = True
+
+    if cv_wait_key:
+        cv_wait_key_val = 0 # Wait if true
+    else:
+        cv_wait_key_val = 1 # Don't wait if false
+
+    img = cv2.imread(film_slice, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        print("Failed to load image.")
+        return
+
+    h, w = img.shape
+    flat_img = img.reshape(-1, 1)
+
+    # Apply KMeans
+    kmeans = KMeans(n_clusters=number_of_clusters, random_state=0, n_init="auto")
+    kmeans.fit(flat_img)
+    labels = kmeans.labels_.reshape(h, w)
+
+    # Display each cluster separately
+    for cluster_id in range(number_of_clusters):
+        mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
+        cluster_img = cv2.bitwise_and(img, img, mask=mask)
+
+        plt.figure()
+        plt.title(f"Cluster {cluster_id}")
+        plt.imshow(cluster_img, cmap='gray')
+        plt.axis('off')
+
+    # Optional: show original image too
+    plt.figure()
+    plt.title("Original Grayscale")
+    plt.imshow(img, cmap='gray')
+    plt.axis('off')
+
+    plt.show()
+
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--input-slice', '-s', help="Path to the first slice.", type=str)
-    parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
+    parser.add_argument('--number-of-clusters', '-k', help="Number of clusters you are expecting. DEFAULT=3", type=int, default=3)
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
-    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved.", type=str)
+    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. Default: Nothing will be saved", type=str)
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
     film_slice = args.input_slice
-    threshold_factor = args.threshold_factor
+    number_of_clusters = args.number_of_clusters
     num_seg_points = args.num_seg_points
     output_folder = args.output_folder
     cv_wait_key = args.cv_wait_key
     cv_show = args.cv_show
     print(f'CV_WAIT_KEY: {cv_wait_key}, CV_SHOW: {cv_show}')
 
-    if threshold_factor==0:
-        print("Threshold cannot be zero.")
+    if number_of_clusters==0:
+        print("Number of clusters cannot be zero.")
         return
-    thin(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
+    kmeans(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
          cv_show=cv_show)
 
 

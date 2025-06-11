@@ -15,6 +15,7 @@ import heapq
 from math import sqrt 
 import uuid
 from itertools import combinations
+from sklearn.cluster import DBSCAN
 
 
 def euclidean(p1, p2):
@@ -187,7 +188,7 @@ def is_y_branch_point(x, y, img):
     return transitions >= 3
 
 
-def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, threshold_factor: float = 2.0, num_seg_points: int = 1000):
+def dbscan(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, threshold_factor: float = 2.0, num_seg_points: int = 1000):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -223,86 +224,33 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
     _, binary = cv2.threshold(img[:, :, 0], (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     skeleton = cv2.ximgproc.thinning(binary)
 
-    num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
+    # Get coordinates of skeleton pixels
+    coords = np.column_stack(np.where(skeleton > 0))  # shape: (N, 2), format: (row, col)
 
-    for idx in range(1, num_labels):  # skip background
-        component_mask = (labels == idx).astype(np.uint8)
+    if len(coords) == 0:
+        print("No skeleton pixels found.")
+        return
 
-        endpoints = find_endpoints(component_mask=component_mask)
-        
-        num_points = cv2.countNonZero(component_mask)
-        print(f"\nComponent {idx}: {num_points} points")
+    # Apply DBSCAN
+    db = DBSCAN(eps=5, min_samples=5).fit(coords)
+    labels = db.labels_
+    unique_labels = set(labels)
 
-        if num_points < num_seg_points:
-            print(f"Number of points less than {num_seg_points}. Skipping component.")
-            continue
+    # Create overlay image
+    color_overlay = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2RGB)
+    colors = plt.cm.get_cmap('tab20', len(unique_labels))
 
-        y_branch_points = []
-        padded = np.pad(component_mask, 1, mode='constant')
-        h, w = component_mask.shape
+    for cluster_id in unique_labels:
+        rgba = colors(cluster_id % 20) if cluster_id != -1 else (0.5, 0.5, 0.5, 1.0)  # gray for noise
+        cluster_color = tuple(int(c * 255) for c in rgba[:3])
 
-        for x in range(1, h + 1):
-            for y in range(1, w + 1):
-                if padded[x, y] == 1 and is_y_branch_point(x, y, padded):
-                    y_branch_points.append((x - 1, y - 1))
+        cluster_points = coords[labels == cluster_id]
+        for x, y in cluster_points:
+            color_overlay[x, y] = cluster_color
 
-        if len(y_branch_points) > 0:
-            print(f"Component {idx} contains Y-branching structure ({len(y_branch_points)} Y-points).")
-            if output_folder:
-                with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f'Component {idx} contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
-        else:
-            print(f"Component {idx} has no Y-junctions.")
-            if output_folder:
-                with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f"Component {idx} has no Y-junctions.")
-
-        # Draw pruned skeleton on original image as green dots
-        color_overlay = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2RGB)
-
-        ys, xs = np.where(component_mask == 1)
-        for (y, x) in zip(ys, xs):
-            color_overlay[y, x] = [0, 255, 255]
-        
-        for yb in y_branch_points:
-            cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green 
-        
-        pathlen = 0
-        start = (0,0)
-        end = (0,0)
-        for p1, p2 in combinations(endpoints, 2):
-            q = shortest_path_length(binary, p1, p2)
-            if q >= pathlen:
-                pathlen = q
-                start, end = p1, p2
-        
-        print(f'Start: {start}, End: {end}')
-        cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
-        cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
-        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
-        
-        shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
-        print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
-        if output_folder:
-            with open(f'{save_at}/segmented_component_{idx}.txt', 'w') as f:
-                f.write(f'x,y\n')
-                for spidx, sp in enumerate(shortestpath):
-                    cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
-                    f.write(f'{sp[1]},{sp[0]}\n')
-                f.write(f'Cost: {shortestdist}')
-        else:
-            for spidx, sp in enumerate(shortestpath):
-                cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
-
-        if cv_show:
-            cv2.imshow(f"Component {idx} - Skeleton Overlay", color_overlay)
-            cv2.waitKey(cv_wait_key_val)
-
-        if output_folder:
-            cv2.imwrite(f'{save_at}/segmented_component_{idx}.jpg', img=color_overlay)
-
-    print("Press any key to exit the program!")
-    cv2.waitKey(cv_wait_key_val)
+    # Display result
+    cv2.imshow("DBSCAN Clusters on Skeleton", color_overlay)
+    cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 def main():
@@ -310,7 +258,7 @@ def main():
     parser.add_argument('--input-slice', '-s', help="Path to the first slice.", type=str)
     parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
-    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved.", type=str)
+    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. Default: Nothing will be saved", type=str)
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
@@ -325,7 +273,7 @@ def main():
     if threshold_factor==0:
         print("Threshold cannot be zero.")
         return
-    thin(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
+    dbscan(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
          cv_show=cv_show)
 
 
