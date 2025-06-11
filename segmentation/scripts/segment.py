@@ -13,6 +13,7 @@ matplotlib.use('TkAgg')
 from collections import deque
 import heapq
 from math import sqrt 
+import uuid
 
 
 def euclidean(p1, p2):
@@ -185,7 +186,17 @@ def is_y_branch_point(x, y, img):
     return transitions >= 3
 
 
-def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1000):
+def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: bool=False, threshold_factor: float = 2.0, num_seg_points: int = 1000):
+    if cv_wait_key:
+        cv_wait_key_val = 0 # Wait if true
+    else:
+        cv_wait_key_val = 1 # Don't wait if false
+    uuid_id = str(uuid.uuid4())
+    save_at = Path(output_folder) / uuid_id
+    print(f"Saving things at {save_at}")
+    save_at.mkdir(parents=True, exist_ok=True)
+    with open(f'{save_at}/details.txt', 'w') as fid:
+        fid.write(f'Film slice: {film_slice}, threshold-factor: {threshold_factor}, max_num_of_seg_points: {num_seg_points}')
     img = cv2.imread(film_slice)
     if img is None:
         print(f"Error: Could not load image {film_slice}")
@@ -205,13 +216,13 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
 
-    for i in range(1, num_labels):  # skip background
-        component_mask = (labels == i).astype(np.uint8)
+    for idx in range(1, num_labels):  # skip background
+        component_mask = (labels == idx).astype(np.uint8)
 
         endpoints = find_endpoints(component_mask=component_mask)
         
         num_points = cv2.countNonZero(component_mask)
-        print(f"\nComponent {i}: {num_points} points")
+        print(f"\nComponent {idx}: {num_points} points")
 
         if num_points < num_seg_points:
             print(f"Number of points less than {num_seg_points}. Skipping component.")
@@ -227,9 +238,9 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
                     y_branch_points.append((x - 1, y - 1))
 
         if len(y_branch_points) > 0:
-            print(f"Component {i} contains Y-branching structure ({len(y_branch_points)} Y-points).")
+            print(f"Component {idx} contains Y-branching structure ({len(y_branch_points)} Y-points).")
         else:
-            print(f"Component {i} has no Y-junctions.")
+            print(f"Component {idx} has no Y-junctions.")
 
         # Draw pruned skeleton on original image as green dots
         color_overlay = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2RGB)
@@ -238,7 +249,7 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
         for (y, x) in zip(ys, xs):
             color_overlay[y, x] = [0, 255, 255]
         
-        for yidx, yb in enumerate(y_branch_points):
+        for yb in y_branch_points:
             cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green 
         
         pathlen = 0
@@ -260,11 +271,13 @@ def thin(film_slice: str, threshold_factor: float = 2.0, num_seg_points: int = 1
         shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
         print(f'Length of the shortest path between start and end is: {shortestdist} pixels')
         for sp in shortestpath:
-            cv2.circle(color_overlay, (sp[1], sp[0]), 2, (255,255,0),2)
+            cv2.circle(color_overlay, (sp[1], sp[0]), 1, (255,255,0),1)
+        if cv_show:
+            cv2.imshow(f"Component {idx} - Skeleton Overlay", color_overlay)
+            cv2.waitKey(cv_wait_key_val)
 
+        cv2.imwrite(f'{save_at}/segmented_component_{idx}.jpg', img=color_overlay)
 
-        cv2.imshow(f"Component {i} - Skeleton Overlay", color_overlay)
-        cv2.waitKey(0)
 
     cv2.destroyAllWindows()
 
@@ -273,14 +286,23 @@ def main():
     parser.add_argument('--input-slice', '-s', help="Path to the first slice.", type=str)
     parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
+    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. Default: PWD", type=str, default="./")
+    parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
+    parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
     film_slice = args.input_slice
     threshold_factor = args.threshold_factor
     num_seg_points = args.num_seg_points
+    output_folder = args.output_folder
+    cv_wait_key = args.cv_wait_key
+    cv_show = args.cv_show
+    print(f'CV_WAIT_KEY: {cv_wait_key}, CV_SHOW: {cv_show}')
+
     if threshold_factor==0:
         print("Threshold cannot be zero.")
         return
-    thin(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points)
+    thin(film_slice=film_slice, threshold_factor=threshold_factor, num_seg_points=num_seg_points, output_folder=output_folder, cv_wait_key=cv_wait_key,
+         cv_show=cv_show)
 
 
 if __name__ == "__main__":
