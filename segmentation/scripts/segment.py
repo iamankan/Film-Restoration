@@ -265,6 +265,8 @@ def thin(film_slice: str, output_folder: str, cv_show: bool=True, cv_wait_key: b
                         end = endpoints[j]
         
         print(f'Start: {start}, End: {end}')
+        cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
+        cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
         cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
 
         # shortestpath = shortest_path_skeleton(skeleton=binary, start=start, end=end)
