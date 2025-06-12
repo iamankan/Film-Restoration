@@ -349,7 +349,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         
         if len(pointset[0])>0:
             pointset = np.array(pointset)
-            seg_id = get_date()
+            seg_id = f'{get_date()}_kmeans_thin'
             seg_path = volpkg_dir / f'paths/{seg_id}'
             seg_path.mkdir(exist_ok=True, parents=True)
             print(f'Generated segmentation id: {seg_id} and the path is {seg_path}')
