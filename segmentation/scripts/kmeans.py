@@ -203,6 +203,7 @@ def thin(original_image: np.array, clustered: np.array, save_at: str, cluster_id
     center_point = (cy//2, cx//2)
     
     _, binary = cv2.threshold(clustered, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    # binary = cv2.adaptiveThreshold(clustered, img_max, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,11,2)
     skeleton = cv2.ximgproc.thinning(binary)
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
@@ -210,7 +211,7 @@ def thin(original_image: np.array, clustered: np.array, save_at: str, cluster_id
     if save_at:
         save_at_cluster = Path(save_at) / f'cluster_{cluster_id}'
         save_at_cluster.mkdir(parents=True, exist_ok=True)
-        colored_path = np.zeros_like(original_image)
+        colored_path = original_image.copy()
         cv2.imwrite(f'{save_at_cluster}/original_image.jpg', original_image)
         cv2.imwrite(f'{save_at_cluster}/cluster_mask.jpg', cluster_mask)
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
@@ -285,8 +286,8 @@ def thin(original_image: np.array, clustered: np.array, save_at: str, cluster_id
         else:
             for spidx, sp in enumerate(shortestpath):
                 cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
-                
-        colored_path = cv2.bitwise_xor(colored_path, color_overlay)
+
+        colored_path = cv2.bitwise_or(colored_path, color_overlay)
         
 
         cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
@@ -313,7 +314,7 @@ def kmeans(film_slice: str, output_folder: str, threshold_factor:float=2.0, cv_s
         print(f"Saving things at {save_at}")
         save_at.mkdir(parents=True, exist_ok=True)
         with open(f'{save_at}/details.txt', 'w') as fid:
-            fid.write(f'KMEANS->Thinning\nFilm slice: {film_slice}\nthreshold factor: {threshold_factor}\nnumber of clusters: {number_of_clusters}\n max_num_of_seg_points: {num_seg_points}\n')
+            fid.write(f'KMEANS->Thinning\nFilm slice: {film_slice}\nthreshold factor: {threshold_factor}\nnumber of clusters: {number_of_clusters}\nmax_num_of_seg_points: {num_seg_points}\n')
     else:
         print(f"Nothing is being saved. So, you will see the outputs. And press a key after every output to see the next.")
         cv_show = True
@@ -349,18 +350,18 @@ def kmeans(film_slice: str, output_folder: str, threshold_factor:float=2.0, cv_s
         cluster_img = cv2.bitwise_and(img, img, mask=mask)
         print(f'cluster_img shape: {cluster_img.shape}')
 
-        plt.figure()
-        plt.title(f"Cluster {cluster_id}")
-        plt.imshow(cluster_img, cmap='gray')
-        plt.axis('off')
+    #     plt.figure()
+    #     plt.title(f"Cluster {cluster_id}")
+    #     plt.imshow(cluster_img, cmap='gray')
+    #     plt.axis('off')
 
-    # Optional: show original image too
-    plt.figure()
-    plt.title("Original Grayscale")
-    plt.imshow(img, cmap='gray')
-    plt.axis('off')
+    # # Optional: show original image too
+    # plt.figure()
+    # plt.title("Original Grayscale")
+    # plt.imshow(img, cmap='gray')
+    # plt.axis('off')
 
-    plt.show()
+    # plt.show()
 
     for cluster_id in range(number_of_clusters):
         mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
