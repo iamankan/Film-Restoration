@@ -3,3 +3,4 @@ imageio
 matplotlib
 opencv-contrib-python
 networkx
+scikit-learn
