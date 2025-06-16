@@ -246,7 +246,22 @@ def is_y_branch_point(x, y, img):
 python3 segmentation/scripts/kmeans.py -s /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26855.volpkg/volumes/20250214115505/1000.tif -k 3 -n 100
 '''
 
-def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, cluster_mask: np.array, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
+# def select_n_points(pointset, required_number):
+#     # Get the uniform interval
+#     d = len(pointset)//required_number
+#     final_pointset = []
+#     # Start with the starting point and keep on selecting points until the last point
+#     for i in range(required_number-1):
+#         final_pointset.append(pointset[i*d])
+#     final_pointset.append(pointset[-1])
+#     return final_pointset
+def select_n_points(pointset, required_number):
+    step = (len(pointset) - 1) / (required_number - 1)
+    return [pointset[int(round(i * step))] for i in range(required_number)]
+
+
+def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
+         cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
@@ -331,6 +346,11 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         
         shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
+        if total_seg_points:
+            print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
+            shortestpath = select_n_points(shortestpath, total_seg_points)
+            print(f'Now the total points are {len(shortestpath)}')
+
         pointset = [[]]
         slice_no = int(film_slice.stem)
         if save_at:
@@ -371,13 +391,15 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             cv2.imwrite(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
     
     if save_at:
+        print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
         cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
         cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_cluster{cluster_id}.jpg', img=colored_path)
 
     
     
 
-def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, threshold_factor:float=2.0, cv_show: bool=True, cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
+def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, total_seg_points: int, threshold_factor:float=2.0, cv_show: bool=True, 
+           cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -429,7 +451,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
         print(f"Starting thinning for cluster {cluster_id}")
         thin(volpkg_dir=volpkg_dir, original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
              cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask, volume=volume,
-             film_slice=film_slice)
+             film_slice=film_slice, total_seg_points=total_seg_points)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -447,6 +469,7 @@ def main():
     parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
     parser.add_argument('--number-of-clusters', '-k', help="Number of clusters you are expecting. DEFAULT=3", type=int, default=3)
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
+    parser.add_argument('--total-seg-points', '-s', help="Total number of segmentation points.", type=int)
     parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. This should be outside volpkg. Default: Nothing will be saved", type=str)
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
@@ -463,6 +486,10 @@ def main():
     threshold_factor = args.threshold_factor
     number_of_clusters = args.number_of_clusters
     num_seg_points = args.num_seg_points
+    total_seg_points = args.total_seg_points
+    if total_seg_points:
+        print(f'Reduction in points needed to {total_seg_points}')
+
     output_folder = args.output_folder
     cv_wait_key = args.cv_wait_key
     cv_show = args.cv_show
@@ -474,7 +501,7 @@ def main():
     
 
     kmeans(volpkg_dir=volpkg, film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
-           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume)
+           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points)
 
 
 if __name__ == "__main__":
