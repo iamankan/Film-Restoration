@@ -4,6 +4,7 @@ import argparse
 import json
 import datetime as dt
 from natsort import natsorted
+import imageio.v3 as iio
 
 # From quicksegment https://github.com/educelab/quick-segment/blob/develop/qs/data/vcps.py
 def get_date():
@@ -62,10 +63,26 @@ def cloud_to_dict(cloud):
     return lines
 
 
-def traverse(volpkg_path, volume_path, segment_path, volume_id, segment_id, output_dir, kernel_size, direction, number_of_slices):
+def traverse(volpkg_path, volume_path, segment_path, volume_id, segment_id, output_dir, kernel_size, direction, number_of_slices, curr_slice):
     vcps = load_vcps(segment_dir=segment_path)
-    file_name = natsorted([x for x in volume_path.iterdir()])
+    slice_keys = list(vcps.keys())
+    if curr_slice == None:
+        if direction == -1:
+            curr_slice = slice_keys[0]
+        else:
+            curr_slice = slice_keys[-1]
+    print(f'curr-slice: {curr_slice}')
+    all_files = []
+    for i in volume_path.iterdir():
+        if i.suffix == '.tif' and not i.name.startswith('.'):
+            file_list.append(i)
+    all_files = natsorted(file_list)
+    file_list = all_files[curr_slice-number_of_slices:curr_slice]
     
+
+
+    
+
 
 
 
@@ -75,9 +92,10 @@ def main():
     parser.add_argument('--volume', help='Volume ID. In volpkg_path/volumes', type=str)
     parser.add_argument('--segment','-s', help='Segment ID. In volpkg_path/paths', type=str)
 
+    parser.add_argument('--current-slice', '-c', help='Current slice index.')
     parser.add_argument('--kernel-size','-k', help='Kernel to search for the intensity.', type=int)
     parser.add_argument('--direction','-d', help='The transition direction. +1/-1. +1: go in positive direction. -1: go in previous direction. DEFAULT: 1', 
-                        choices=[1,-1], default=1)
+                        type=int, choices=[1,-1], default=1)
     parser.add_argument('--number-of-slices','-n', help='Number of slices to traverse.', type=int)
     parser.add_argument('--output-folder','-o', help='Output folder.', type=str)
     args = parser.parse_args()
@@ -89,10 +107,18 @@ def main():
     volume_path = volpkg_path / f'volumes/{volume_id}'
     segment_path = volpkg_path / f'paths/{segment_id}'
 
+    curr_slice = args.current_slice
     kernel_size = args.kernel_size
     direction = args.direction
     number_of_slices = args.number_of_slices
     output_folder = Path(args.output_folder)
 
+    print(f'Curr-slice: {curr_slice}')
+
+    traverse(volpkg_path=volpkg_path, volume_path=volume_path, segment_path=segment_path, volume_id=volume_id, segment_id=segment_id, 
+             output_dir=output_folder, kernel_size=kernel_size, direction=direction, number_of_slices=number_of_slices, curr_slice=curr_slice)
 
 
+
+if __name__ == "__main__":
+    main()
