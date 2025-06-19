@@ -5,6 +5,8 @@ import json
 import datetime as dt
 from natsort import natsorted
 import imageio.v3 as iio
+import cv2
+import uuid
 
 # From quicksegment https://github.com/educelab/quick-segment/blob/develop/qs/data/vcps.py
 def get_date():
@@ -64,25 +66,85 @@ def cloud_to_dict(cloud):
 
 
 def traverse(volpkg_path, volume_path, segment_path, volume_id, segment_id, output_dir, kernel_size, direction, number_of_slices, curr_slice):
-    vcps = load_vcps(segment_dir=segment_path)
-    slice_keys = list(vcps.keys())
+    vcps_dict = load_vcps(segment_dir=segment_path)
+    slice_keys = list(vcps_dict.keys())
     if curr_slice == None:
         if direction == -1:
-            curr_slice = slice_keys[0]
+            curr_slice_index = slice_keys[0]
         else:
-            curr_slice = slice_keys[-1]
-    print(f'curr-slice: {curr_slice}')
+            curr_slice_index = slice_keys[-1]
+    else:
+        curr_slice_index = curr_slice
+    
+    print(f'curr-slice-index: {curr_slice_index}')
     all_files = []
     for i in volume_path.iterdir():
         if i.suffix == '.tif' and not i.name.startswith('.'):
-            file_list.append(i)
-    all_files = natsorted(file_list)
-    file_list = all_files[curr_slice-number_of_slices:curr_slice]
-    
+            all_files.append(i)
+    all_files = natsorted(all_files)
+    all_indices = []
+    for i in range(curr_slice_index,curr_slice_index+(direction*(number_of_slices+1)), direction):
+        all_indices.append(i)
+    print(all_indices)
+    k_delta = (kernel_size-1)//2
+    kernel_ones = np.ones((kernel_size, kernel_size), dtype=np.float64)
+    central_idx = np.array([k_delta,k_delta])
+
+    writing_path = Path(output_dir) / str(uuid.uuid4())
+    writing_path.mkdir(exist_ok=True, parents=True)
+    print(f'Everything will be written to {writing_path}')
+
+    for slice_idx in all_indices[:-2]:
+        curr_slice_idx = slice_idx
+        next_slice_idx = slice_idx+1
+
+        curr_slice_img = cv2.imread(all_files[curr_slice_idx])
+        # curr_slice_img[:,:,1:] = np.zeros_like(curr_slice_img[:,:,1:])
+
+        next_slice_img = cv2.imread(all_files[next_slice_idx])
+        # next_slice_img[:,:,1:] = np.zeros_like(next_slice_img[:,:,1:])
+        
+        next_slice_seg_coords = []
+
+        seg_coords = vcps_dict[curr_slice_idx]
+        for seg_order_idx, seg_coord in enumerate(seg_coords):
+            curr_slice_x = int(seg_coord[0])
+            curr_slice_y = int(seg_coord[1])
+            curr_intensity = curr_slice_img[curr_slice_y, curr_slice_x, 0]
+            curr_ones = curr_intensity * kernel_ones
+
+            next_kernel = next_slice_img[curr_slice_y-k_delta:curr_slice_y+k_delta+1, curr_slice_y-k_delta:curr_slice_y+k_delta+1, 0]
+            next_kernel = next_kernel.astype(np.float64)
+
+            diff_square = abs(np.square(curr_ones) - np.square(next_kernel))
+            # diff_square = abs(curr_ones - next_kernel)
+
+            diff_min = diff_square.min()
+            min_idx = np.column_stack(np.where(diff_square == diff_min))
+            
+            if min_idx.shape[0] > 1:
+                selected_coord_kernel = central_idx
+            else:
+                # print(min_idx.shape)
+                central_vector = central_idx * np.ones_like(min_idx)
+                r = (min_idx - central_vector)
+                dist_from_center = np.sqrt(np.square(r[:,0])+np.square(r[:,1]))
+                min_dis_from_center_idx = np.argmin(dist_from_center)
+                selected_coord_kernel = min_idx[min_dis_from_center_idx]
+            next_slice_y, next_slice_x = int(curr_slice_y + selected_coord_kernel[0] - k_delta), int(curr_slice_x + selected_coord_kernel[1] - k_delta)
 
 
-    
-
+            next_slice_seg_coords.append([next_slice_x, next_slice_y, next_slice_idx])
+            # next_slice_img[next_slice_y, next_slice_x, :] = [next_slice_img[next_slice_y, next_slice_x, 0], seg_order_idx*255//len(seg_coords),255]
+            cv2.circle(next_slice_img, (next_slice_x, next_slice_y), radius=1, color=(0, seg_order_idx*255//len(seg_coords),255), thickness=2)
+        vcps_dict[next_slice_idx] = next_slice_seg_coords
+        cv2.imwrite(f'{writing_path}/slice_{next_slice_idx}.jpg', next_slice_img)
+        print(f'Slice-{next_slice_idx} done!')
+        # next_slice_img = cv2.cvtColor(next_slice_img, cv2.COLOR_BGR2RGB)
+    #     cv2.imshow(f"Slice: {next_slice_idx}", next_slice_img)
+    #     cv2.waitKey(1)
+    # cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 
 
