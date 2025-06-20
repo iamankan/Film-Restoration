@@ -275,6 +275,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     _, binary = cv2.threshold(clustered, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     
     skeleton = cv2.ximgproc.thinning(binary)
+        
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
     print(f"Total components: {num_labels} (including background).")
@@ -285,6 +286,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/original_image.jpg', original_image)
         cv2.imwrite(f'{save_at_cluster}/cluster_mask.jpg', cluster_mask)
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
+        cv2.imwrite(f'{save_at_cluster}/skeleton.jpg', skeleton)
+        cv2.imwrite(f'{save_at_cluster}/binary.jpg', binary)
     
 
     for idx in range(1, num_labels):  # skip background
@@ -388,7 +391,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             cv2.waitKey(cv_wait_key_val)
 
         if save_at:
-            cv2.imwrite(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
+            if len(pointset[0])>0:
+                cv2.imwrite(f'{save_at_cluster}/segmented_{seg_id}_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
     
     if save_at:
         print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
@@ -440,12 +444,12 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
     labels = kmeans.labels_.reshape(h, w)
 
     # Display each cluster separately
-    for cluster_id in range(number_of_clusters):
+    for cluster_id in range(0, number_of_clusters):
         mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
         cluster_img = cv2.bitwise_and(img, img, mask=mask)
         print(f'cluster_img shape: {cluster_img.shape}')
 
-    for cluster_id in range(number_of_clusters):
+    for cluster_id in range(0, number_of_clusters):
         mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
         cluster_img = cv2.bitwise_and(img, img, mask=mask)
         print(f"Starting thinning for cluster {cluster_id}")

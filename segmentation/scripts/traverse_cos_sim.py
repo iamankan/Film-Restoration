@@ -98,7 +98,7 @@ def traverse(volpkg_path, volume_path, segment_path, volume_id, segment_id, outp
     next_central = np.array([next_slice_kernel_delta,next_slice_kernel_delta])
 
 
-    writing_path = Path(output_dir) / str(uuid.uuid4())
+    writing_path = Path(output_dir) / f'{str(uuid.uuid4())}_seg_{segment_id}'
     writing_path.mkdir(exist_ok=True, parents=True)
     print(f'Everything will be written to {writing_path}')
 
@@ -218,5 +218,13 @@ if __name__ == "__main__":
 Commands to run:
 python3 segmentation/scripts/kmeans_vcps.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26861.volpkg --volume 20250214141357 --slice-name 1000.tif -t 3 -k 3 -n 5000 -s 1000 -o /localdisk0/moma-test-W26861
 python3 segmentation/scripts/traverse_cos_sim.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26861.volpkg --volume 20250214141357 -c 1000 --segment 20250619022247_kmeans_thin -k1 3 -k2 3 --direction +1 --number-of-slices 5 --output-folder /localdisk0/moma_vcps_traverse_test_W26861/
+
+python3 segmentation/scripts/traverse_cos_sim.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26868.volpkg --volume 20250214142323 -c 1500 --segment 20250619052644_kmeans_thin -k1 3 -k2 3 --direction +1 --number-of-slices 2500 --output-folder /localdisk0/moma_vcps_traverse_test_W26868/
+python3 segmentation/scripts/traverse_cos_sim.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26868.volpkg --volume 20250214142323 -c 1500 --segment 20250619052630_kmeans_thin -k1 3 -k2 3 --direction +1 --number-of-slices 2500 --output-folder /localdisk0/moma_vcps_traverse_test_W26868/
+
+
+python3 segmentation/scripts/kmeans_vcps.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26858.volpkg --volume 20250213145507 --slice-name 1000.tif -t 3 -k 3 -n 5000 -s 1000 -o /localdisk0/moma-segment-W26861
+
+python3 segmentation/scripts/traverse_cos_sim.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26861.volpkg --volume 20250214141357 -c 1000 --segment 20250619221456_kmeans_thin -k1 3 -k2 3 --direction +1 --number-of-slices 2000 --output-folder /localdisk0/moma_vcps_traverse_test_W26861/
 
 '''
