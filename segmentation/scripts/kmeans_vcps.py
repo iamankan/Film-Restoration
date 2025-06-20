@@ -167,7 +167,7 @@ def find_endpoints(component_mask):
                     padded[y+1, x-1], padded[y+1, x], padded[y+1, x+1]
                 ]
                 if sum(neighbors) == 1:
-                    # Exactly one neighbor → endpoint
+                    # Exactly one neighbor -> endpoint
                     endpoints.append((y-1, x-1))  # remove padding offset
     return endpoints
 
