@@ -43,12 +43,6 @@ def get_longest_path(G):
 
 def skeleton_to_graph(skeleton):
     G = nx.Graph()
-    connected_components = list(nx.connected_components(G))
-    print(f"Number of connected components: {len(connected_components)}")
-    if len(connected_components)>0:
-        largest_cc = max(nx.connected_components(G), key=len)
-        G = G.subgraph(largest_cc).copy()
-
     rows, cols = skeleton.shape
     for y in range(rows):
         for x in range(cols):
@@ -89,7 +83,7 @@ def prune_short_branches(G, min_length=20):
             path.append(next_node)
             visited.add(next_node)
             current = next_node
-            if G.degree[current] != 2:
+            if G.degree[current] != 3:
                 break  # stop at junction or another endpoint
 
         if len(path) < min_length:
@@ -166,18 +160,21 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
     working_image = cv2.GaussianBlur(working_image, (gaussian_kernel, gaussian_kernel), 0)
     working_image_norm = (working_image - working_image.min())/(working_image.max() - working_image.min())
     print(working_image_norm.min(), working_image_norm.max())
-    _, working_image_threshold = cv2.threshold(src=working_image_norm, thresh=working_image_norm.max()/threshold, maxval=working_image_norm.max(), type=cv2.THRESH_BINARY)
+    _, working_image_threshold = cv2.threshold(src=working_image_norm, thresh=working_image_norm.max()/threshold, maxval=working_image_norm.max(), 
+                                               type=cv2.THRESH_BINARY)
     working_image_threshold = working_image_threshold.astype(np.uint8)
     print(working_image_threshold.min(), working_image_threshold.max(), working_image_threshold.dtype)
     if output_dir:
         cv2.imwrite(f'{output_dir}/threshold_image.jpg', working_image_threshold*255)
+
     num_labels, labels_im, stats, centroids = cv2.connectedComponentsWithStats(image=working_image_threshold, connectivity=connectivity)
     mask = {}
     print(f"Number of connected components: {num_labels}")
     for i in range(1, num_labels): # 0 is the background, always. So, starting from 1
         componentMask = (labels_im == i).astype("uint8")
-        if len(np.where(componentMask==1)[0]) > min_connected_points:
+        if len(np.where(componentMask==1)[0]) >= min_connected_points:
             mask[i] = componentMask
+    
     components = mask.keys()
     print(f"Number of acceptable connected components: {len(components)}")
     if len(components) > 0:
@@ -200,12 +197,17 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                 cv2.imwrite(f'{component_dir}/thinned_mask_component_{component_id}.jpg', thinned_mask)
             # get the graph from skeleton
             G = skeleton_to_graph(thinned_mask*255)
-            # draw_graph_with_endpoints(G, output_path=None)
+            if output_dir:
+                draw_graph_with_endpoints(G, output_path=f'{component_dir}/graph.jpg')
             connected_components = list(nx.connected_components(G))
             print(f"Number of connected components: {len(connected_components)}")
             # Remove any cycle, if any
+            prune_short_branches(G, min_length=20)
+            if output_dir:
+                draw_graph_with_endpoints(G, output_path=f'{component_dir}/graph_after_pruning_branches.jpg')
             remove_cycles(G)
-            # draw_graph_with_endpoints(G, output_path=None)
+            if output_dir:
+                draw_graph_with_endpoints(G, output_path=f'{component_dir}/graph_after_pruning_branches_and_removing_cycles.jpg')
             connected_components = list(nx.connected_components(G))
             print(f"Number of connected components: {len(connected_components)}")
             if len(connected_components)>0:
@@ -219,12 +221,27 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                             shortest_path = nx.shortest_path(conn_G, u, v)
                             if len(shortest_path) > len(film_path):
                                 film_path = shortest_path
+                        tmp_img = dummy_image.copy()
                         
                         for j, coord in enumerate(film_path):
                             frac = j/len(film_path)
-                            cv2.circle(dummy_image, (coord[1], coord[0]), 2, color=(0, int(frac*255), int((1-frac)*255)), thickness=2)
+                            cv2.circle(tmp_img, (coord[1], coord[0]), 1, color=(0, int(frac*255), int((1-frac)*255)), thickness=2)
                         if output_dir:
-                            cv2.imwrite(f'{component_dir}/segmented_ordered_ps_mask_component_{component_id}_connected_{i}.jpg', dummy_image)
+                            cv2.imwrite(f'{component_dir}/segmented_ordered_ps_mask_component_{component_id}_connected_{i}.jpg', tmp_img)
+            else:
+                endpoints = get_endpoints(G)
+                print(f'Endpoints: {endpoints}')
+                film_path = []
+                for u,v in combinations(endpoints, 2):
+                    shortest_path = nx.shortest_path(G, u, v)
+                    if len(shortest_path) > len(film_path):
+                        film_path = shortest_path
+                tmp_img = dummy_image.copy()
+                for j, coord in enumerate(film_path):
+                    frac = j/len(film_path)
+                    cv2.circle(tmp_img, (coord[1], coord[0]), 1, color=(0, int(frac*255), int((1-frac)*255)), thickness=1)
+                if output_dir:
+                    cv2.imwrite(f'{component_dir}/segmented_ordered_ps_mask_component_{component_id}_no_cc.jpg', tmp_img)
 
             
 
