@@ -10,6 +10,9 @@ from skimage.util import invert
 from itertools import combinations
 import matplotlib.pyplot as plt
 import datetime as dt
+from sklearn.cluster import DBSCAN
+from skimage.filters import gaussian
+from skimage.segmentation import active_contour
 
 """
 This does remove and try to seperate fused regions of the films.
@@ -143,22 +146,33 @@ def draw_graph_with_endpoints(G, output_path=None):
 
 def angle_between_vectors_in_degrees(v1, v2):
     # Normalize the vectors
-    v1 = v1 / (np.linalg.norm(v1) + 1e-8)
-    v2 = v2 / (np.linalg.norm(v2) + 1e-8)
+    v1 = v1 / (np.linalg.norm(v1))
+    v2 = v2 / (np.linalg.norm(v2))
     dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
     angle_rad = np.arccos(dot)
     angle_deg = np.degrees(angle_rad)
     return angle_deg
 
+def find_index_in_contour(p0, contour):
+    distances = np.linalg.norm(contour - p0, axis=1)
+    return np.argmin(distances)
 
-def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str, threshold: int, min_connected_points: int, connectivity:int, gaussian_kernel: int,
-            thinning_algorithm: int, num_connected_components: int):
+
+def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str, threshold: int, min_connected_points: int, connectivity:int, 
+            gaussian_kernel: int,
+            thinning_algorithm: int, num_connected_components: int,
+            junction_angle_threshold: float, junction_window_size: int, junction_window_min: int):
     print(f'Volpkg path: {volpkg_path}, Volume ID: {volume_id}, output-dir: {output_dir}, slice-name: {slice_name}, threshold: {threshold}')
     slice_image_path = Path(f'{volpkg_path}/volumes/{volume_id}/{slice_name}')
     slice_image = cv2.imread(slice_image_path)
     assert slice_image.any(), f'{slice_image_path} not present'
     print(f'Shape of the slice image is {slice_image.shape}')
     dummy_image = slice_image.copy()
+    window_size = junction_window_size
+    angle_threshold = junction_angle_threshold
+    length = 15
+    junction_window_max = window_size
+
     if output_dir:
         print(f'Saving auxiliary output to {output_dir}')
         cv2.imwrite(f'{output_dir}/dummy_image.jpg', dummy_image)
@@ -183,6 +197,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
     
     components = mask.keys()
     print(f"Number of acceptable connected components: {len(components)}")
+    junctions = []
     if len(components) > 0:
         for component_id in components:
             print(f'Working on component-{component_id}')
@@ -206,45 +221,115 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             """
             # Try to detect fused regions
             print(f'Trying to detect fused regions')
-            fused_canvas = np.zeros_like(dummy_image)
-            fused_canvas[:,:,0] = componentMask*255
-            fused_canvas[:,:,1] = componentMask*255
-            fused_canvas[:,:,2] = componentMask*255
-            # junction detection
+
             binary_image = componentMask.copy()
-            # edge_image = np.zeros_like(binary_image)
-            # # detect edges (Go with rasterization) XOR operation
-            # h, w = binary_image.shape
-            # for i in range(h):
-            #     for j in range(1, w):
-            #         prev = binary_image[i][j-1]
-            #         curr = binary_image[i][j]
-            #         edge_image[i][j] = prev ^ curr
-            # print(f'Completed calculating edges')
-            contours, _ = cv2.findContours(binary_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-            contour_coordinates = contours[0] # ordered pointset
-            boundary_image = np.zeros_like(binary_image)
-            cv2.drawContours(boundary_image, contours, contourIdx=-1, color=1, thickness=1)
-            if output_dir:
-                cv2.imwrite(f'{component_dir}/edges_{component_id}.jpg', boundary_image*255)
-            # Let's detect the junction now
-            boundary = np.squeeze(contour_coordinates)
-            boundary_len = len(boundary)
-            window_size = 9
-            print(f'Boundary length is: {boundary_len}')
-            for i in range(boundary_len):
-                left_indices = [(i - j) % boundary_len for j in range(s, 0, -1)]
-                left_neighbors = boundary[left_indices]
 
-                right_indices = [(i + j) % boundary_len for j in range(1, s+1)]
-                right_neighbors = boundary[right_indices]
+            contours, _ = cv2.findContours(binary_image, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+            print(len(contours))
 
-
-
+            composite_fused_canvas = np.zeros_like(dummy_image)
+            composite_fused_canvas[:,:,0] = componentMask*255
+            composite_fused_canvas[:,:,1] = componentMask*255
+            composite_fused_canvas[:,:,2] = componentMask*255
             
+            # Let's detect the junction now
+            for c_idx, contour in enumerate(contours):
+                contour_image = np.zeros_like(binary_image)
+                cv2.drawContours(contour_image, contour, contourIdx=-1, color=1, thickness=1)
+                if output_dir:
+                    cv2.imwrite(f'{component_dir}/edges_{component_id}_contour_{c_idx}.jpg', contour_image*255)
 
+                fused_canvas = np.zeros_like(dummy_image)
+                fused_canvas[:,:,0] = componentMask*255
+                fused_canvas[:,:,1] = componentMask*255
+                fused_canvas[:,:,2] = componentMask*255
+                # junction detection
+                edge_image = np.zeros_like(fused_canvas)
+                edge_image[:,:,0] = contour_image*255
+                edge_image[:,:,1] = contour_image*255
+                edge_image[:,:,2] = contour_image*255
 
+                contour_ordered_coordinates = np.squeeze(contour)
+                n = len(contour_ordered_coordinates)
+                color_canvas = np.zeros_like(dummy_image)
+                for i in range(n):
+                    frac = i/n
+                    cv2.circle(color_canvas, (contour_ordered_coordinates[i][0], contour_ordered_coordinates[i][1]),
+                               1, (0, int((1-frac)*255), int(frac*255)), 1)
+                if output_dir:
+                    cv2.imwrite(f'{component_dir}/ordered_edges_{component_id}_contour_{c_idx}.jpg', color_canvas)
+                for i in range(0, n, window_size):
+                    p0 = contour_ordered_coordinates[i]
+                    angles = []
+                    for offset in range(junction_window_min, window_size + 1):
+                        # print(f'({i}-{offset}), ({i}+{offset})')
+                        pl = contour_ordered_coordinates[(i - offset) % n]
+                        pr = contour_ordered_coordinates[(i + offset) % n]
 
+                        p0pl = p0 - pl
+                        p0pr = p0 - pr
+
+                        angle = angle_between_vectors_in_degrees(p0pl, p0pr)
+                        angles.append(angle)
+
+                    avg_angle = np.mean(angles)
+                    pl = contour_ordered_coordinates[(i - window_size) % n]
+                    pr = contour_ordered_coordinates[(i + window_size) % n]
+                    
+                    # pl = contour_ordered_coordinates[(i - window_size) % n]
+                    # pr = contour_ordered_coordinates[(i + window_size) % n]
+                    # p0pl = p0 - pl
+                    # p0pr = p0 - pr
+                    # avg_angle = angle_between_vectors_in_degrees(p0pl, p0pr)
+
+                    if avg_angle < angle_threshold:
+                        pts = np.array(np.array([[p0[0], p0[1]], [pl[0], pl[1]], [pr[0], pr[1]]]), dtype=np.int32)
+                        mask = np.zeros_like(binary_image)
+                        cv2.fillPoly(mask, [pts], 255)
+
+                        values = binary_image[mask==255]
+                        print(type(values))
+                        one_cnt = np.sum(values==1)
+                        zero_cnt = np.sum(values==0)
+                        print(f'one_count: {one_cnt}, zero_count: {zero_cnt}')
+                        if one_cnt < zero_cnt:
+                            print("Allowed!")
+
+                            tmp_triangle = np.zeros_like(dummy_image)
+                            tmp_triangle[:,:,0] = componentMask*255
+                            tmp_triangle[:,:,1] = componentMask*255
+                            tmp_triangle[:,:,2] = componentMask*255
+                            cv2.circle(tmp_triangle, center=(p0[0], p0[1]), radius=2, color=(0,255,0), thickness=1)
+                            cv2.circle(tmp_triangle, center=(pl[0], pl[1]), radius=2, color=(0,0,255), thickness=1) # left red
+                            cv2.circle(tmp_triangle, center=(pr[0], pr[1]), radius=2, color=(0,0,255), thickness=1) # right blue
+                            cv2.fillPoly(tmp_triangle, pts=[pts], color=(255,255,0))
+                            if output_dir:
+                                cv2.imwrite(f'{component_dir}/triangle_{component_id}_contour_{c_idx}_pt{i}_angle_{avg_angle}.jpg', tmp_triangle)
+                            
+                            junctions.append(p0)
+                            cv2.circle(fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
+                            cv2.circle(edge_image, (p0[0], p0[1]), 2, (0,0,255), 2)
+                            cv2.circle(composite_fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
+            
+            
+                if output_dir:
+                    cv2.imwrite(f'{component_dir}/fused_{component_id}_contour_{c_idx}.jpg', fused_canvas)
+                    cv2.imwrite(f'{component_dir}/fused_edges_{component_id}_contour_{c_idx}.jpg', edge_image)
+            ordered_junction_canvas = np.zeros_like(dummy_image)
+            ordered_junction_canvas[:,:,0] = componentMask*255
+            ordered_junction_canvas[:,:,1] = componentMask*255
+            ordered_junction_canvas[:,:,2] = componentMask*255
+            for jni, junction_coords in enumerate(junctions):
+                cv2.circle(ordered_junction_canvas, (junction_coords[0], junction_coords[1]), 2, (0, int((1-(jni/len(junctions))*255)), int(((jni/len(junctions))*255))),
+                           2)
+            if output_dir:
+                cv2.imwrite(f'{component_dir}/composite_fused_edges_{component_id}_contour.jpg', composite_fused_canvas)
+
+                cv2.imwrite(f'{component_dir}/ordered_junction_points_{component_id}_contour.jpg', ordered_junction_canvas)
+
+            print(f'Total number of junctions detected: {len(junctions)}')
+            
+            print(f'Junctions are:\n{junctions}')
             
 
 def main():
@@ -259,6 +344,11 @@ def main():
     parser.add_argument('--gaussian-kernel', help="Kernel size for gaussian blur. For example, if provided 5, the kernel will be (5,5).", type=int, default=9)
     parser.add_argument('--thinning-algorithm', help="Provide the thinning algorithm to be use. 0: Zhang-Suen;1: Guo Hall", type=int, default=0, choices=[0,1])
     parser.add_argument('--num-connected-components', help="Enter the number of points to qualify as a connected component.", type=int, required=True)
+    parser.add_argument('--junction-angle', help="Angle less than which will represent a junction.", type=float, required=True)
+    parser.add_argument('--junction-window', help="Window size which will be used to detect junction", type=int, required=True)
+    parser.add_argument('--junction-window-min', help="minimum offset from which the junction calulation will start. It should be less than window size.", 
+                        type=int, default=1)
+
     args= parser.parse_args()
 
     volpkg = Path(args.volpkg)
@@ -271,6 +361,13 @@ def main():
     gaussian_kernel = args.gaussian_kernel
     thinning_algorithm = args.thinning_algorithm
     num_connected_components = args.num_connected_components
+    junction_angle = args.junction_angle
+    junction_window = args.junction_window
+    junction_window_min = args.junction_window_min
+
+    assert junction_window_min < junction_window, "Min junction window should be less than junction window size."
+
+
     thinning_algorithm_list = {
         cv2.ximgproc.THINNING_ZHANGSUEN: 'Zhang-Suen',
         cv2.ximgproc.THINNING_GUOHALL: 'Guo-Hall'
@@ -291,7 +388,8 @@ def main():
         print(f'No auxiliary outputs will be saved')
     segment(volpkg_path=volpkg, volume_id=volume_id, output_dir=aux_path, slice_name=slice_name, threshold=threshold, 
             min_connected_points=min_connected_points, connectivity=connectivity, gaussian_kernel=gaussian_kernel, thinning_algorithm=thinning_algorithm,
-            num_connected_components=num_connected_components)
+            num_connected_components=num_connected_components, junction_angle_threshold=junction_angle, junction_window_size=junction_window,
+            junction_window_min=junction_window_min)
 
 if __name__ == "__main__":
     main()
