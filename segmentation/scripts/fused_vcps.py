@@ -164,8 +164,8 @@ def draw_graph_with_endpoints(G, output_path=None):
         plt.show()
 
 def angle_between_vectors_in_degrees(v1, v2):
-    v1 = v1 / (np.linalg.norm(v1))
-    v2 = v2 / (np.linalg.norm(v2))
+    v1 = v1 / (np.linalg.norm(v1) + 1e-12)
+    v2 = v2 / (np.linalg.norm(v2) + 1e-12)
     dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
     angle_rad = np.arccos(dot)
     angle_deg = np.degrees(angle_rad)
@@ -174,28 +174,6 @@ def angle_between_vectors_in_degrees(v1, v2):
 def find_index_in_contour(p0, contour):
     distances = np.linalg.norm(contour - p0, axis=1)
     return np.argmin(distances)
-
-# def get_junction_sections(junctions, eps=10, min_samples=1):
-#     junctions = np.array(junctions)
-#     db = DBSCAN(eps=eps, min_samples=min_samples).fit(junctions)
-#     labels = db.labels_
-#     unique_labels = set(labels)
-
-#     section_set = set()
-
-#     for label in unique_labels:
-#         points = junctions[labels == label]
-
-#         if len(points) == 1:
-#             p0 = tuple(map(int, points[0]))
-#             section = (p0, p0)
-#         else:
-#             sorted_pts = sorted([tuple(map(int, pt)) for pt in points], key=lambda pt: (pt[0], pt[1]))
-#             section = (sorted_pts[0], sorted_pts[-1])
-#         section = tuple(sorted(section))
-#         section_set.add(section)
-
-#     return list(section_set)
 
 def get_junction_sections_from_triplets(junction_triplets, eps=10, min_samples=1):
     if not junction_triplets:
@@ -231,7 +209,7 @@ def draw_cut_from_single_point(p0, contour, mask, cut_length=5, cut_thickness=1)
     p_prev = contour[(i - 1) % n]
     p_next = contour[(i + 1) % n]
     tangent = p_next - p_prev
-    tangent = tangent / (np.linalg.norm(tangent) + 1e-8)
+    tangent = tangent / (np.linalg.norm(tangent) + 1e-12)
 
     if tangent.shape != (2,):
         raise ValueError(f"Tangent is malformed: {tangent}")
@@ -244,7 +222,7 @@ def draw_cut_from_single_point(p0, contour, mask, cut_length=5, cut_thickness=1)
     cv2.line(mask, tuple(p1), tuple(p2), color=0, thickness=cut_thickness)
 
 def normal_vector(v):
-    v = v / (np.linalg.norm(v) + 1e-8)
+    v = v / (np.linalg.norm(v) + 1e-12)
     return np.array([-v[1], v[0]])
 
 
@@ -328,10 +306,29 @@ def extend_until_black(p0, normal, binary_img, init_length=5, max_length=100):
     backward = trace(-normal)
     return backward, forward
 
+def sort_junction_triplets_by_contour(junction_triplets, contour):
+    contour = np.squeeze(contour)
+
+    ordered = []
+    for triple in junction_triplets:
+        p0 = tuple(triple[0])
+        # Find p0 in contour
+        indices = np.where(np.all(contour == p0, axis=1))[0]
+        if len(indices) > 0:
+            idx = indices[0]
+            ordered.append((idx, triple))
+        else:
+            print(f"Warning: p0 {p0} not found in contour")
+
+    # Sort by p0's index in the contour
+    ordered.sort(key=lambda x: x[0])
+    return [triple for _, triple in ordered]
+
 def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str, threshold: int, min_connected_points: int, connectivity:int, 
             gaussian_kernel: int,
             thinning_algorithm: int, num_connected_components: int,
-            junction_angle_threshold: float, junction_window_size: int, junction_window_min: int):
+            junction_angle_threshold: float, junction_window_size: int, junction_window_min: int,
+            skip: int):
     print(f'Volpkg path: {volpkg_path}, Volume ID: {volume_id}, output-dir: {output_dir}, slice-name: {slice_name}, threshold: {threshold}')
     slice_image_path = Path(f'{volpkg_path}/volumes/{volume_id}/{slice_name}')
     slice_image = cv2.imread(slice_image_path)
@@ -378,6 +375,9 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             tmp_img[:,:,0] = tmp_img[:,:,0]*componentMask
             tmp_img[:,:,1] = tmp_img[:,:,1]*componentMask
             tmp_img[:,:,2] = tmp_img[:,:,2]*componentMask
+
+            all_junction_canvas = tmp_img.copy()
+
             if output_dir:
                 cv2.imwrite(f'{component_dir}/maskedcomponent_{component_id}.jpg', tmp_img)
             print(f'Componentmask max, min: {componentMask.max(), componentMask.min()}')
@@ -402,6 +402,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             
             # Let's detect the junction now
             for c_idx, contour in enumerate(contours):
+                tmp_jtrip = []
                 contour_image = np.zeros_like(binary_image)
                 cv2.drawContours(contour_image, contour, contourIdx=-1, color=1, thickness=1)
                 if output_dir:
@@ -426,15 +427,17 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                                1, (0, int((1-frac)*255), int(frac*255)), 1)
                 if output_dir:
                     cv2.imwrite(f'{component_dir}/ordered_edges_{component_id}_contour_{c_idx}.jpg', color_canvas)
-                for i in range(0, n, window_size):
+                for i in range(0, n, skip):
                     p0 = contour_ordered_coordinates[i]
                     angles = []
                     for offset in range(junction_window_min, window_size + 1):
                         pl = contour_ordered_coordinates[(i - offset) % n]
                         pr = contour_ordered_coordinates[(i + offset) % n]
 
-                        p0pl = p0 - pl
-                        p0pr = p0 - pr
+                        # p0pl = (pl - p0).astype(float)
+                        # p0pr = (pr - p0).astype(float)
+                        p0pl = pl - p0
+                        p0pr = pr - p0
 
                         angle = angle_between_vectors_in_degrees(p0pl, p0pr)
                         angles.append(angle)
@@ -443,39 +446,42 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                     pl = contour_ordered_coordinates[(i - window_size) % n]
                     pr = contour_ordered_coordinates[(i + window_size) % n]
 
-                    if avg_angle < angle_threshold:
-                        pts = np.array(np.array([[p0[0], p0[1]], [pl[0], pl[1]], [pr[0], pr[1]]]), dtype=np.int32)
-                        mask = np.zeros_like(binary_image)
-                        cv2.fillPoly(mask, [pts], 255)
+                    pts = np.array(np.array([[p0[0], p0[1]], [pl[0], pl[1]], [pr[0], pr[1]]]), dtype=np.int32)
+                    mask = np.zeros_like(binary_image)
+                    cv2.fillPoly(mask, [pts], 255)
 
-                        values = binary_image[mask==255]
-                        print(type(values))
+                    values = binary_image[mask==255]
+
+                    # tmp_triangle = np.zeros_like(dummy_image)
+                    # tmp_triangle[:,:,0] = componentMask*255
+                    # tmp_triangle[:,:,1] = componentMask*255
+                    # tmp_triangle[:,:,2] = componentMask*255
+                    # cv2.circle(tmp_triangle, center=(p0[0], p0[1]), radius=2, color=(0,255,0), thickness=1)
+                    # cv2.circle(tmp_triangle, center=(pl[0], pl[1]), radius=2, color=(0,0,255), thickness=1) # left red
+                    # cv2.circle(tmp_triangle, center=(pr[0], pr[1]), radius=2, color=(0,0,255), thickness=1) # right blue
+                    # cv2.fillPoly(tmp_triangle, pts=[pts], color=(255,255,0))
+                    # if output_dir:
+                    #     triangle_path = component_dir / "traingle"
+                    #     triangle_path.mkdir(exist_ok=True, parents=True)
+                    #     cv2.imwrite(f'{triangle_path}/triangle_{component_id}_contour_{c_idx}_pt{i}_angle_{avg_angle}.jpg', tmp_triangle)
+                    
+
+                    if avg_angle < angle_threshold:
                         one_cnt = np.sum(values==1)
                         zero_cnt = np.sum(values==0)
-                        print(f'one_count: {one_cnt}, zero_count: {zero_cnt}')
                         if one_cnt < zero_cnt:
-                            print("Allowed!")
-
-                            tmp_triangle = np.zeros_like(dummy_image)
-                            tmp_triangle[:,:,0] = componentMask*255
-                            tmp_triangle[:,:,1] = componentMask*255
-                            tmp_triangle[:,:,2] = componentMask*255
-                            cv2.circle(tmp_triangle, center=(p0[0], p0[1]), radius=2, color=(0,255,0), thickness=1)
-                            cv2.circle(tmp_triangle, center=(pl[0], pl[1]), radius=2, color=(0,0,255), thickness=1) # left red
-                            cv2.circle(tmp_triangle, center=(pr[0], pr[1]), radius=2, color=(0,0,255), thickness=1) # right blue
-                            cv2.fillPoly(tmp_triangle, pts=[pts], color=(255,255,0))
-                            if output_dir:
-                                cv2.imwrite(f'{component_dir}/triangle_{component_id}_contour_{c_idx}_pt{i}_angle_{avg_angle}.jpg', tmp_triangle)
-                            
-                            junction_triplets.append([p0, pl, pr])
+                            print(f"Allowed! Angle: {avg_angle} degrees")
+                            tmp_jtrip.append([p0, pl, pr])
                             cv2.circle(fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
                             cv2.circle(edge_image, (p0[0], p0[1]), 2, (0,0,255), 2)
-                            cv2.circle(composite_fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
-            
-            
+                            cv2.circle(composite_fused_canvas, (p0[0], p0[1]), 1, (0,0,255), 1)
+                tmp_jtrip = sort_junction_triplets_by_contour(junction_triplets=tmp_jtrip, contour=contour)
+                junction_triplets = junction_triplets + tmp_jtrip
+                
                 if output_dir:
                     cv2.imwrite(f'{component_dir}/fused_{component_id}_contour_{c_idx}.jpg', fused_canvas)
                     cv2.imwrite(f'{component_dir}/fused_edges_{component_id}_contour_{c_idx}.jpg', edge_image)
+                    cv2.imwrite(f'{component_dir}/composite_fused_edges_{component_id}_contour_{c_idx}.jpg', composite_fused_canvas)
             
 
             print(f'Total number of junctions detected: {len(junction_triplets)}')
@@ -499,11 +505,14 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
 
             for section in jtrip_sections:
                 p0s = [np.array(triplet[0]) for triplet in section]
-                center = np.mean(np.array(p0s), axis=0)
+                print(f'p0s-len: {len(p0s)}')
+                # center = np.mean(np.array(p0s), axis=0)
 
-                dists = [np.linalg.norm(p0 - center) for p0 in p0s]
-                min_idx = np.argmin(dists)
-                representative_triplet = section[min_idx]  # (p0, pl, pr)
+                # dists = [np.linalg.norm(p0 - center) for p0 in p0s]
+                # min_idx = np.argmin(dists)
+                # representative_triplet = section[min_idx]  # (p0, pl, pr)
+                # representative_triplet = section[len(p0s)//2]
+                representative_triplet = section[-1]
 
                 junction_triplets_middle.append(representative_triplet)
             
@@ -511,6 +520,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             
             binary_mask = binary_image.copy()
             partitioning_binary = binary_image.copy()
+            plpr_bin = binary_image.copy()
             
             triplet_canvas = np.zeros_like(dummy_image)
             triplet_canvas[:,:,0] = componentMask*255
@@ -521,7 +531,12 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             for jtrip in junction_triplets_middle:
                 print(jtrip)
                 p0 = np.array(jtrip[0])
+                pl = np.array(jtrip[1])
+                pr = np.array(jtrip[2])
+                pl = tuple(map(int, pl))
+                pr = tuple(map(int, pr))
                 cv2.circle(pre_breakup_canvas, p0, 2, (0,0,255), 2)
+                cv2.line(plpr_bin, pl, pr, 0, 2)
                 for contour in contours:
                     if np.any(np.all(contour.squeeze() == p0, axis=1)):
                         normal = get_pca_normal_from_contour(contour.squeeze(), p0, window=5)
@@ -529,11 +544,44 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                             start, end = extend_until_black(p0, normal, binary_mask, init_length=5, max_length=100)
                             cv2.line(triplet_canvas, start, end, (0, 0, 255), 1)
                             cv2.line(partitioning_binary, start, end, 0, 2)
+
             
             if output_dir:
                 cv2.imwrite(f'{component_dir}/triplet_junction_{component_id}.jpg', triplet_canvas)
                 cv2.imwrite(f'{component_dir}/partitioned_binary_{component_id}.jpg', partitioning_binary*255)
                 cv2.imwrite(f'{component_dir}/junctions_{component_id}.jpg', pre_breakup_canvas)
+                cv2.imwrite(f'{component_dir}/plpr_{component_id}.jpg', plpr_bin*255)
+            
+
+            
+            fuse_component_path = component_dir / 'fused_components'
+            fuse_component_path.mkdir(exist_ok=True, parents=True)
+            fuse_num_labels, fuse_labels_im, fuse_stats, fuse_centroids = cv2.connectedComponentsWithStats(image=partitioning_binary, 
+                                                                                                       connectivity=connectivity)
+            # print(f'fuse_labels_im: {fuse_labels_im}')
+            all_junction_points = [(int(p0[0]), int(p0[1])) for p0, _, _ in junction_triplets]
+            
+            new_mask = []
+            
+            for i in range(1, fuse_num_labels): # 0 is the background, always. So, starting from 1
+                
+                new_componentMask = (fuse_labels_im == i).astype("uint8")
+                new_mask.append(new_componentMask)
+                nx, ny = np.where(new_componentMask==1)
+                # match_list = [(int(f[0]), int(f[1])) in all_junction_points for f in zip(nx, ny)]
+                match_list = [(y, x) in all_junction_points for y, x in zip(ny, nx)]
+                number_of_trues = sum(match_list)
+                frac = number_of_trues/len(match_list)
+                if frac > 0.001:
+                    print(f'Trues:: {sum(match_list)}, total: {len(match_list)}, frac(/1): {sum(match_list)/len(match_list)}')
+                    print(f'Fuse component detected!')
+                    fused_mask=new_componentMask
+                    if output_dir:
+                        cv2.imwrite(f'{fuse_component_path}/fuse_component_{i}_main_component_{component_id}.jpg', fused_mask*255)
+
+                if output_dir:
+                    cv2.imwrite(f'{fuse_component_path}/new_component{i}_main_component_{component_id}.jpg', new_componentMask*255)
+            
                     
                 
 
@@ -553,6 +601,7 @@ def main():
     parser.add_argument('--junction-window', help="Window size which will be used to detect junction", type=int, required=True)
     parser.add_argument('--junction-window-min', help="minimum offset from which the junction calulation will start. It should be less than window size.", 
                         type=int, default=1)
+    parser.add_argument('--skip',help="Number of pixels to skip while traversing the contour.", type=int, default=1)
 
     args= parser.parse_args()
 
@@ -569,6 +618,7 @@ def main():
     junction_angle = args.junction_angle
     junction_window = args.junction_window
     junction_window_min = args.junction_window_min
+    skip = args.skip
 
     assert junction_window_min < junction_window, "Min junction window should be less than junction window size."
 
@@ -594,7 +644,7 @@ def main():
     segment(volpkg_path=volpkg, volume_id=volume_id, output_dir=aux_path, slice_name=slice_name, threshold=threshold, 
             min_connected_points=min_connected_points, connectivity=connectivity, gaussian_kernel=gaussian_kernel, thinning_algorithm=thinning_algorithm,
             num_connected_components=num_connected_components, junction_angle_threshold=junction_angle, junction_window_size=junction_window,
-            junction_window_min=junction_window_min)
+            junction_window_min=junction_window_min, skip=skip)
 
 if __name__ == "__main__":
     main()

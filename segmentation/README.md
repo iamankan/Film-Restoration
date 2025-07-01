@@ -11,3 +11,7 @@ Layer fusion:
 ```shell
 python3 segmentation/scripts/fused_vcps.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26858.volpkg --volume 20250213145507 --slice-name 1000.tif --output-dir /localdisk0/moma-seg-fused --min-connected-points 1000 --connectivity 4 --gaussian-kernel 5 --thinning-algorithm 1 -t 2 --num-connected-components 1000 --junction-angle 160 --junction-window 15 --junction-window-min 5
 ```
+
+```shell
+python3 segmentation/scripts/fused_vcps.py --volpkg /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26858.volpkg --volume 20250213145507 --slice-name 1000.tif --output-dir /localdisk0/moma-seg-fused --min-connected-points 1000 --connectivity 4 --gaussian-kernel 5 --thinning-algorithm 1 -t 2 --num-connected-components 1000 --junction-angle 160 --junction-window 15 --junction-window-min 5 --skip 2
+```
