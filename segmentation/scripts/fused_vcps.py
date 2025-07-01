@@ -180,6 +180,60 @@ def find_index_in_contour(p0, contour):
     distances = np.linalg.norm(contour - p0, axis=1)
     return np.argmin(distances)
 
+def get_junction_sections(junctions, eps=10, min_samples=1):
+    junctions = np.array(junctions)
+    db = DBSCAN(eps=eps, min_samples=min_samples).fit(junctions)
+    labels = db.labels_
+    unique_labels = set(labels)
+
+    section_set = set()
+
+    for label in unique_labels:
+        points = junctions[labels == label]
+
+        if len(points) == 1:
+            p0 = tuple(map(int, points[0]))
+            section = (p0, p0)
+        else:
+            sorted_pts = sorted([tuple(map(int, pt)) for pt in points], key=lambda pt: (pt[0], pt[1]))
+            section = (sorted_pts[0], sorted_pts[-1])
+
+        # sort to ensure (a, b) and (b, a) are treated the same
+        section = tuple(sorted(section))
+        section_set.add(section)
+
+    return list(section_set)
+
+def draw_cut_from_single_point(p0, contour, mask, cut_length=5):
+    contour = np.squeeze(contour)
+    contour = contour.astype(np.float32)
+    p0 = np.asarray(p0, dtype=np.float32)
+    n = len(contour)
+    
+    # i = np.where((contour == p0).all(axis=1))[0][0]
+    matches = np.where(np.all(np.isclose(contour, p0, atol=1), axis=1))[0]
+    if len(matches) == 0:
+        # raise ValueError(f"p0 {p0} not found in contour.")
+        return f"p0 {p0} not found in contour."
+    i = matches[0]
+
+    # Estimate tangent
+    p_prev = contour[(i - 1) % n]
+    p_next = contour[(i + 1) % n]
+    tangent = p_next - p_prev
+    tangent = tangent / (np.linalg.norm(tangent) + 1e-8)
+
+    if tangent.shape != (2,):
+        raise ValueError(f"Tangent is malformed: {tangent}")
+
+    normal = np.array([-tangent[1], tangent[0]])
+
+    p1 = np.round(p0 + cut_length * normal).astype(int) # p=p+nt
+    p2 = np.round(p0 - cut_length * normal).astype(int) # p=p+nt
+
+    # Draw line
+    cv2.line(mask, tuple(p1), tuple(p2), color=0, thickness=3)
+
 
 def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str, threshold: int, min_connected_points: int, connectivity:int, 
             gaussian_kernel: int,
@@ -350,17 +404,44 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             print(f'Junctions are:\n{junctions}')
 
             # now let's connect the junctions
-            pairs = find_nearest_pairs(junctions)
-            print("Pairs")
-            print(pairs)
-            pair_canvas = binary_image.copy()
-            for p in pairs:
-                cv2.line(pair_canvas, (p[0][0], p[0][1]), (p[1][0],p[1][1]), 0, 2)
-            if output_dir:
-                cv2.imwrite(f'{component_dir}/fuse_lines_{component_id}_contour.jpg', pair_canvas*255)
+            # pairs = find_nearest_pairs(junctions)
+            # print("Pairs")
+            # print(pairs)
+            # pair_canvas = binary_image.copy()
+            # for p in pairs:
+            #     cv2.line(pair_canvas, (p[0][0], p[0][1]), (p[1][0],p[1][1]), 0, 2)
+            # if output_dir:
+            #     cv2.imwrite(f'{component_dir}/fuse_lines_{component_id}_contour.jpg', pair_canvas*255)
 
+            jsections = get_junction_sections(junctions=junctions)
+            print("J-sections:")
+            for j in jsections:
+                print(f'J_Sec: {j}')
+            
+            binary_mask = binary_image.copy()
 
             
+            for pt in jsections:
+                if pt[0] == pt[1]:
+                    for contour in contours:
+                        draw_cut_from_single_point(np.array([pt[0][0], pt[0][1]]), contour, binary_mask, cut_length=15)
+                else:
+                    cv2.line(binary_mask, pt[0], pt[1], color=0, thickness=3)
+            
+
+            if output_dir:
+                cv2.imwrite(f'{component_dir}/junction_lines_{component_id}.jpg', binary_mask*255)
+            
+            new_num_labels, new_labels_images, new_stats, new_centroids = cv2.connectedComponentsWithStats(image=binary_mask, connectivity=connectivity)
+            print(f"Number of new connected components: {new_num_labels}")
+            new_component_masks = []
+            for i in range(1, new_num_labels): # 0 is the background, always. So, starting from 1
+                new_componentMask = (new_labels_images == i).astype("uint8")
+                new_component_masks.append(new_componentMask)
+            
+                if output_dir:
+                    cv2.imwrite(f'{component_dir}/newcomponentmask_{i}_{component_id}.jpg', new_componentMask*255)
+                
 
 def main():
     parser = argparse.ArgumentParser()
