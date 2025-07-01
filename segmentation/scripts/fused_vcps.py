@@ -5,14 +5,10 @@ import cv2
 import numpy as np
 import skan as csr
 import networkx as nx
-from skimage.morphology import skeletonize
-from skimage.util import invert
 from itertools import combinations
 import matplotlib.pyplot as plt
 import datetime as dt
 from sklearn.cluster import DBSCAN
-from skimage.filters import gaussian
-from skimage.segmentation import active_contour
 from scipy.spatial.distance import cdist
 
 """
@@ -168,7 +164,6 @@ def draw_graph_with_endpoints(G, output_path=None):
         plt.show()
 
 def angle_between_vectors_in_degrees(v1, v2):
-    # Normalize the vectors
     v1 = v1 / (np.linalg.norm(v1))
     v2 = v2 / (np.linalg.norm(v2))
     dot = np.clip(np.dot(v1, v2), -1.0, 1.0)
@@ -197,23 +192,38 @@ def get_junction_sections(junctions, eps=10, min_samples=1):
         else:
             sorted_pts = sorted([tuple(map(int, pt)) for pt in points], key=lambda pt: (pt[0], pt[1]))
             section = (sorted_pts[0], sorted_pts[-1])
-
-        # sort to ensure (a, b) and (b, a) are treated the same
         section = tuple(sorted(section))
         section_set.add(section)
 
     return list(section_set)
 
-def draw_cut_from_single_point(p0, contour, mask, cut_length=5):
+def get_junction_sections_from_triplets(junction_triplets, eps=10, min_samples=1):
+    if not junction_triplets:
+        return []
+
+    p0_points = np.array([triplet[0] for triplet in junction_triplets])
+
+    db = DBSCAN(eps=eps, min_samples=min_samples).fit(p0_points)
+    labels = db.labels_
+    unique_labels = set(labels)
+
+    clustered_triplets = []
+
+    for label in unique_labels:
+        cluster_indices = np.where(labels == label)[0]
+        cluster_triplets = [junction_triplets[i] for i in cluster_indices]
+        clustered_triplets.append(cluster_triplets)
+
+    return clustered_triplets
+
+def draw_cut_from_single_point(p0, contour, mask, cut_length=5, cut_thickness=1):
     contour = np.squeeze(contour)
     contour = contour.astype(np.float32)
     p0 = np.asarray(p0, dtype=np.float32)
     n = len(contour)
     
-    # i = np.where((contour == p0).all(axis=1))[0][0]
     matches = np.where(np.all(np.isclose(contour, p0, atol=1), axis=1))[0]
     if len(matches) == 0:
-        # raise ValueError(f"p0 {p0} not found in contour.")
         return f"p0 {p0} not found in contour."
     i = matches[0]
 
@@ -230,10 +240,93 @@ def draw_cut_from_single_point(p0, contour, mask, cut_length=5):
 
     p1 = np.round(p0 + cut_length * normal).astype(int) # p=p+nt
     p2 = np.round(p0 - cut_length * normal).astype(int) # p=p+nt
+    
+    cv2.line(mask, tuple(p1), tuple(p2), color=0, thickness=cut_thickness)
 
-    # Draw line
-    cv2.line(mask, tuple(p1), tuple(p2), color=0, thickness=3)
+def normal_vector(v):
+    v = v / (np.linalg.norm(v) + 1e-8)
+    return np.array([-v[1], v[0]])
 
+
+
+def extend_until_background_from_point(p0, direction, binary_mask, max_len=15):
+    h, w = binary_mask.shape
+    for i in range(1, max_len + 1):
+        step = np.round(p0 + i * direction).astype(int)
+        x, y = step
+        if 0 <= x < w and 0 <= y < h:
+            if binary_mask[y, x] == 0:
+                return tuple(step)
+        else:
+            break
+    return tuple(step)
+
+def get_tangent(contour, i):
+    prev = contour[(i - 1) % len(contour)]
+    next = contour[(i + 1) % len(contour)]
+    tangent = next - prev
+    tangent = tangent / (np.linalg.norm(tangent) + 1e-8)
+    return tangent
+
+def get_smoothed_tangent(contour, i, window=3):
+    n = len(contour)
+    prev = contour[(i - window) % n]
+    nxt = contour[(i + window) % n]
+    tangent = nxt - prev
+    tangent = tangent / (np.linalg.norm(tangent) + 1e-8)
+    return tangent
+
+def get_pca_normal(contour, i, window=5):
+    n = len(contour)
+    idxs = [(i + offset) % n for offset in range(-window, window + 1)]
+    pts = np.array([contour[idx] for idx in idxs])
+
+    # Center the points
+    pts_mean = pts.mean(axis=0)
+    pts_centered = pts - pts_mean
+
+    # PCA
+    U, S, Vt = np.linalg.svd(pts_centered)
+    tangent = Vt[0]
+    normal = Vt[1]  # perpendicular to tangent
+    return normal / (np.linalg.norm(normal) + 1e-8)
+
+def get_pca_normal_from_contour(contour, p0, window=5):
+    
+    contour = np.asarray(contour)
+    i = np.where((contour == p0).all(axis=1))[0]
+    if len(i) == 0:
+        return None  # p0 not found in contour
+    i = i[0]
+
+    n = len(contour)
+    idxs = [(i + offset) % n for offset in range(-window, window + 1)]
+    pts = np.array([contour[idx] for idx in idxs])
+
+    pts_mean = pts.mean(axis=0)
+    pts_centered = pts - pts_mean
+
+    _, _, Vt = np.linalg.svd(pts_centered)
+    normal = Vt[1]  # normal is perpendicular to tangent (which is Vt[0])
+    return normal / (np.linalg.norm(normal) + 1e-8)
+
+def extend_until_black(p0, normal, binary_img, init_length=5, max_length=100):
+    h, w = binary_img.shape
+    p0 = np.array(p0, dtype=np.float32)
+
+    def trace(direction):
+        for d in range(init_length, max_length):
+            candidate = p0 + direction * d
+            x, y = int(round(candidate[0])), int(round(candidate[1]))
+            if not (0 <= x < w and 0 <= y < h):
+                break
+            if binary_img[y, x] == 0:  # hit black
+                return (int(round(candidate[0])), int(round(candidate[1])))
+        return (int(round(candidate[0])), int(round(candidate[1])))
+
+    forward = trace(normal)
+    backward = trace(-normal)
+    return backward, forward
 
 def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str, threshold: int, min_connected_points: int, connectivity:int, 
             gaussian_kernel: int,
@@ -247,8 +340,6 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
     dummy_image = slice_image.copy()
     window_size = junction_window_size
     angle_threshold = junction_angle_threshold
-    length = 15
-    junction_window_max = window_size
 
     if output_dir:
         print(f'Saving auxiliary output to {output_dir}')
@@ -275,6 +366,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
     components = mask.keys()
     print(f"Number of acceptable connected components: {len(components)}")
     junctions = []
+    junction_triplets = []
     if len(components) > 0:
         for component_id in components:
             print(f'Working on component-{component_id}')
@@ -377,6 +469,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                                 cv2.imwrite(f'{component_dir}/triangle_{component_id}_contour_{c_idx}_pt{i}_angle_{avg_angle}.jpg', tmp_triangle)
                             
                             junctions.append(p0)
+                            junction_triplets.append([p0, pl, pr])
                             cv2.circle(fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
                             cv2.circle(edge_image, (p0[0], p0[1]), 2, (0,0,255), 2)
                             cv2.circle(composite_fused_canvas, (p0[0], p0[1]), 2, (0,0,255), 2)
@@ -419,28 +512,32 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                 print(f'J_Sec: {j}')
             
             binary_mask = binary_image.copy()
-
+            partitioning_binary = binary_image.copy()
             
-            for pt in jsections:
-                if pt[0] == pt[1]:
-                    for contour in contours:
-                        draw_cut_from_single_point(np.array([pt[0][0], pt[0][1]]), contour, binary_mask, cut_length=15)
-                else:
-                    cv2.line(binary_mask, pt[0], pt[1], color=0, thickness=3)
-            
+            triplet_canvas = np.zeros_like(dummy_image)
+            triplet_canvas[:,:,0] = componentMask*255
+            triplet_canvas[:,:,1] = componentMask*255
+            triplet_canvas[:,:,2] = componentMask*255
 
+            jtrip_sections = get_junction_sections_from_triplets(junction_triplets)
+            for jt in jtrip_sections:
+                jtrip = jt[0]
+                p0 = np.array(jtrip[0])
+                pl = np.array(jtrip[1])
+                pr = np.array(jtrip[2])
+
+                for contour in contours:
+                    if np.any(np.all(contour.squeeze() == p0, axis=1)):
+                        normal = get_pca_normal_from_contour(contour.squeeze(), p0, window=5)
+                        if normal is not None:
+                            start, end = extend_until_black(p0, normal, binary_mask, init_length=5, max_length=100)
+                            cv2.line(triplet_canvas, start, end, (0, 0, 255), 1)
+                            cv2.line(partitioning_binary, start, end, 0, 2)
+            
             if output_dir:
-                cv2.imwrite(f'{component_dir}/junction_lines_{component_id}.jpg', binary_mask*255)
-            
-            new_num_labels, new_labels_images, new_stats, new_centroids = cv2.connectedComponentsWithStats(image=binary_mask, connectivity=connectivity)
-            print(f"Number of new connected components: {new_num_labels}")
-            new_component_masks = []
-            for i in range(1, new_num_labels): # 0 is the background, always. So, starting from 1
-                new_componentMask = (new_labels_images == i).astype("uint8")
-                new_component_masks.append(new_componentMask)
-            
-                if output_dir:
-                    cv2.imwrite(f'{component_dir}/newcomponentmask_{i}_{component_id}.jpg', new_componentMask*255)
+                cv2.imwrite(f'{component_dir}/triplet_junction_{component_id}.jpg', triplet_canvas)
+                cv2.imwrite(f'{component_dir}/partitioned_binary_{component_id}.jpg', partitioning_binary*255)
+                    
                 
 
 def main():
