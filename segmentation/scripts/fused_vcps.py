@@ -328,7 +328,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             gaussian_kernel: int,
             thinning_algorithm: int, num_connected_components: int,
             junction_angle_threshold: float, junction_window_size: int, junction_window_min: int,
-            skip: int):
+            skip: int, fuse_sensitivity: float):
     print(f'Volpkg path: {volpkg_path}, Volume ID: {volume_id}, output-dir: {output_dir}, slice-name: {slice_name}, threshold: {threshold}')
     slice_image_path = Path(f'{volpkg_path}/volumes/{volume_id}/{slice_name}')
     slice_image = cv2.imread(slice_image_path)
@@ -572,7 +572,7 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                 match_list = [(y, x) in all_junction_points for y, x in zip(ny, nx)]
                 number_of_trues = sum(match_list)
                 frac = number_of_trues/len(match_list)
-                if frac > 0.001:
+                if frac > fuse_sensitivity:
                     print(f'Trues:: {sum(match_list)}, total: {len(match_list)}, frac(/1): {sum(match_list)/len(match_list)}')
                     print(f'Fuse component detected!')
                     fused_mask=new_componentMask
@@ -602,6 +602,7 @@ def main():
     parser.add_argument('--junction-window-min', help="minimum offset from which the junction calulation will start. It should be less than window size.", 
                         type=int, default=1)
     parser.add_argument('--skip',help="Number of pixels to skip while traversing the contour.", type=int, default=1)
+    parser.add_argument('--fuse-sensitivity', help="Enter a number above which the fuse is detectable.", type=float, default=0.001)
 
     args= parser.parse_args()
 
@@ -619,6 +620,7 @@ def main():
     junction_window = args.junction_window
     junction_window_min = args.junction_window_min
     skip = args.skip
+    fuse_sensitivity = args.fuse_sensitivity
 
     assert junction_window_min < junction_window, "Min junction window should be less than junction window size."
 
@@ -644,7 +646,7 @@ def main():
     segment(volpkg_path=volpkg, volume_id=volume_id, output_dir=aux_path, slice_name=slice_name, threshold=threshold, 
             min_connected_points=min_connected_points, connectivity=connectivity, gaussian_kernel=gaussian_kernel, thinning_algorithm=thinning_algorithm,
             num_connected_components=num_connected_components, junction_angle_threshold=junction_angle, junction_window_size=junction_window,
-            junction_window_min=junction_window_min, skip=skip)
+            junction_window_min=junction_window_min, skip=skip, fuse_sensitivity=fuse_sensitivity)
 
 if __name__ == "__main__":
     main()
