@@ -13,11 +13,34 @@ import datetime as dt
 from sklearn.cluster import DBSCAN
 from skimage.filters import gaussian
 from skimage.segmentation import active_contour
+from scipy.spatial.distance import cdist
 
 """
 This does remove and try to seperate fused regions of the films.
 
 """
+
+
+def find_nearest_pairs(points):
+    points = points.copy()
+    pairs = []
+
+    while len(points) > 1:
+        # Compute pairwise distances
+        dists = cdist(points, points)
+        np.fill_diagonal(dists, np.inf)  # prevent self-match
+
+        # Find the closest pair
+        i, j = np.unravel_index(np.argmin(dists), dists.shape)
+        pt1, pt2 = points[i], points[j]
+        pairs.append((pt1, pt2))
+
+        # Remove the matched points
+        points = np.delete(points, [i, j], axis=0)
+
+    return pairs
+
+
 def get_date():
     tz = dt.timezone.utc
     return f'{dt.datetime.now(tz).strftime("%Y%m%d%H%M%S")}'
@@ -262,7 +285,6 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                     p0 = contour_ordered_coordinates[i]
                     angles = []
                     for offset in range(junction_window_min, window_size + 1):
-                        # print(f'({i}-{offset}), ({i}+{offset})')
                         pl = contour_ordered_coordinates[(i - offset) % n]
                         pr = contour_ordered_coordinates[(i + offset) % n]
 
@@ -275,12 +297,6 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                     avg_angle = np.mean(angles)
                     pl = contour_ordered_coordinates[(i - window_size) % n]
                     pr = contour_ordered_coordinates[(i + window_size) % n]
-                    
-                    # pl = contour_ordered_coordinates[(i - window_size) % n]
-                    # pr = contour_ordered_coordinates[(i + window_size) % n]
-                    # p0pl = p0 - pl
-                    # p0pr = p0 - pr
-                    # avg_angle = angle_between_vectors_in_degrees(p0pl, p0pr)
 
                     if avg_angle < angle_threshold:
                         pts = np.array(np.array([[p0[0], p0[1]], [pl[0], pl[1]], [pr[0], pr[1]]]), dtype=np.int32)
@@ -315,6 +331,8 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
                 if output_dir:
                     cv2.imwrite(f'{component_dir}/fused_{component_id}_contour_{c_idx}.jpg', fused_canvas)
                     cv2.imwrite(f'{component_dir}/fused_edges_{component_id}_contour_{c_idx}.jpg', edge_image)
+            
+
             ordered_junction_canvas = np.zeros_like(dummy_image)
             ordered_junction_canvas[:,:,0] = componentMask*255
             ordered_junction_canvas[:,:,1] = componentMask*255
@@ -330,6 +348,18 @@ def segment(volpkg_path: Path, volume_id: str, output_dir: Path, slice_name: str
             print(f'Total number of junctions detected: {len(junctions)}')
             
             print(f'Junctions are:\n{junctions}')
+
+            # now let's connect the junctions
+            pairs = find_nearest_pairs(junctions)
+            print("Pairs")
+            print(pairs)
+            pair_canvas = binary_image.copy()
+            for p in pairs:
+                cv2.line(pair_canvas, (p[0][0], p[0][1]), (p[1][0],p[1][1]), 0, 2)
+            if output_dir:
+                cv2.imwrite(f'{component_dir}/fuse_lines_{component_id}_contour.jpg', pair_canvas*255)
+
+
             
 
 def main():
