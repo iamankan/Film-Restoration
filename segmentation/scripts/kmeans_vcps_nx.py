@@ -207,6 +207,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
         cv2.imwrite(f'{save_at_cluster}/skeleton.jpg', skeleton)
         cv2.imwrite(f'{save_at_cluster}/binary.jpg', binary)
+        cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
     
 
     for idx in range(1, num_labels):  # skip background

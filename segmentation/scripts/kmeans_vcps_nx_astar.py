@@ -14,10 +14,11 @@ from collections import deque
 import heapq
 from math import sqrt 
 import uuid
-from itertools import combinations
+from itertools import combinations, permutations
 from sklearn.cluster import KMeans
 import json
 import datetime as dt
+import networkx as nx
 
 
 # From quicksegment https://github.com/educelab/quick-segment/blob/develop/qs/data/vcps.py
@@ -76,192 +77,155 @@ def write_vcps(filename, points):
 def euclidean(p1, p2):
     return sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
 
-def dijkstra_cheapest_path(skeleton, start, end, center_point):
+
+################USING GRAPH Networkx######################
+def skeleton_to_graph(skeleton):
+    G = nx.Graph()
     h, w = skeleton.shape
-    visited = np.zeros_like(skeleton, dtype=bool)
-    dist = np.full(skeleton.shape, np.inf)
-    parent = dict()
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                # Add current pixel as a node
+                G.add_node((y, x))
 
-    dist[start] = euclidean(start, center_point)
-    heap = [(dist[start], start)]
+                # Check 8-connected neighbors
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        if dy == 0 and dx == 0:
+                            continue
+                        ny, nx_ = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
+                            G.add_edge((y, x), (ny, nx_))
+    return G
 
-    neighbors = [(-1, -1), (-1, 0), (-1, 1),
-                 (0, -1),           (0, 1),
-                 (1, -1),  (1, 0),  (1, 1)]
+def find_graph_endpoints(G):
+    return [n for n in G.nodes if G.degree[n] == 1] # list of (y,x)
 
-    while heap:
-        cost, (y, x) = heapq.heappop(heap)
-        if visited[y, x]:
-            continue
-        visited[y, x] = True
+def find_graph_junctions(G):
+    return [n for n in G.nodes if G.degree[n] >= 3] # list of (y,x)
 
-        if (y, x) == end:
-            # Reconstruct path
-            path = []
-            while (y, x) != start:
-                path.append((y, x))
-                y, x = parent[(y, x)]
-            path.append(start)
-            path.reverse()
-            return path, dist[end]
+# def skeleton_to_weighted_graph(skeleton, center_point):
+#     G = nx.Graph()
+#     h, w = skeleton.shape
 
-        for dy, dx in neighbors:
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w and skeleton[ny, nx] > 0:
-                new_cost = cost + euclidean((ny, nx), center_point)
-                if new_cost < dist[ny, nx]:
-                    dist[ny, nx] = new_cost
-                    parent[(ny, nx)] = (y, x)
-                    heapq.heappush(heap, (new_cost, (ny, nx)))
+#     for y in range(h):
+#         for x in range(w):
+#             if skeleton[y, x]:
+#                 for dy in [-1, 0, 1]:
+#                     for dx in [-1, 0, 1]:
+#                         if dy == 0 and dx == 0:
+#                             continue
+#                         ny, nx_ = y + dy, x + dx
+#                         if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
+#                             # Average distance to center_point
+#                             dist1 = np.linalg.norm(np.array([y, x]) - center_point)
+#                             dist2 = np.linalg.norm(np.array([ny, nx_]) - center_point)
+#                             avg_dist = (dist1 + dist2) / 2
+#                             G.add_edge((y, x), (ny, nx_), weight=avg_dist)
+#     return G
 
-    return None, np.inf
-
-def shortest_path_skeleton(skeleton, start, end):
+def skeleton_to_weighted_graph(skeleton, center_point, image, alpha=1.0):
+    G = nx.Graph()
     h, w = skeleton.shape
-    visited = np.zeros_like(skeleton, dtype=bool)
-    parent = dict()
+    image = image.astype(np.float32)
+    image_norm = (image - image.min()) / (image.max() - image.min() + 1e-8)
+    print(f'Image normalized: {image_norm.min(), image_norm.max()}')
 
-    queue = deque([start])
-    visited[start] = True
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        if dy == 0 and dx == 0:
+                            continue
+                        ny, nx_ = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
+                            # Distance to center
+                            dist1 = np.linalg.norm(np.array([y, x]) - center_point)
+                            dist2 = np.linalg.norm(np.array([ny, nx_]) - center_point)
+                            avg_dist = (dist1 + dist2) / 2
 
-    # 8-connected neighbors
-    neighbors = [(-1, -1), (-1, 0), (-1, 1),
-                 (0, -1),           (0, 1),
-                 (1, -1),  (1, 0),  (1, 1)]
+                            # Brightness penalty
+                            b1 = image_norm[y, x]
+                            b2 = image_norm[ny, nx_]
+                            avg_brightness = (b1 + b2) / 2
+                            brightness_penalty = 1.0 - avg_brightness
 
-    while queue:
-        y, x = queue.popleft()
-        if (y, x) == end:
-            # Reconstruct path from end to start
-            path = []
-            while (y, x) != start:
-                path.append((y, x))
-                y, x = parent[(y, x)]
-            path.append(start)
-            path.reverse()
-            return path
+                            # Total cost
+                            cost = avg_dist + alpha * brightness_penalty
+                            G.add_edge((y, x), (ny, nx_), weight=cost)
+    return G
 
-        for dy, dx in neighbors:
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w:
-                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    parent[(ny, nx)] = (y, x)
-                    queue.append((ny, nx))
+def compute_charge(y, x, image_norm):
+    # Here, node charge is just brightness normalized at that pixel
+    return image_norm[y, x]
 
-    return None  # no path found
+def compute_coulomb_potential(y, x, center_point, q_node, Q_center=1.0, epsilon=1e-8):
+    r = np.linalg.norm(np.array([y, x]) - center_point)
+    return Q_center * q_node / (r + epsilon)
 
-def find_endpoints(component_mask):
-    endpoints = []
-    padded = np.pad(component_mask, 1, mode='constant')  # pad to handle edges
-    h, w = component_mask.shape
-
-    for y in range(1, h + 1):
-        for x in range(1, w + 1):
-            if padded[y, x] == 1:
-                # Count 8 neighbors
-                neighbors = [
-                    padded[y-1, x-1], padded[y-1, x], padded[y-1, x+1],
-                    padded[y, x-1],             
-                    padded[y, x+1],
-                    padded[y+1, x-1], padded[y+1, x], padded[y+1, x+1]
-                ]
-                if sum(neighbors) == 1:
-                    # Exactly one neighbor -> endpoint
-                    endpoints.append((y-1, x-1))  # remove padding offset
-    return endpoints
-
-def shortest_path_length(skeleton, start, end):
+def skeleton_to_weighted_graph_1_weight(skeleton, center_point, image, alpha=1.0, Q_center=1.0):
+    G = nx.Graph()
     h, w = skeleton.shape
-    visited = np.zeros_like(skeleton, dtype=bool)
-    dist = np.full_like(skeleton, -1, dtype=int)  # distance array
+    image = image.astype(np.float32)
+    image_norm = (image - image.min()) / (image.max() - image.min() + 1e-8)
+    center_point = np.array(np.argwhere(skeleton)).mean(axis=0)
 
-    queue = deque([start])
-    visited[start] = True
-    dist[start] = 0
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                q_node = alpha*compute_charge(y, x, image_norm)
+                potential = compute_coulomb_potential(y, x, center_point, q_node, Q_center)
+                G.add_node((y, x), charge=q_node, potential=potential)
 
-    neighbors = [(-1, -1), (-1, 0), (-1, 1),
-                 (0, -1),           (0, 1),
-                 (1, -1),  (1, 0),  (1, 1)]
+    # Connect neighbors with uniform weight (or customize)
+    for (y, x) in G.nodes:
+        for dy in [-1, 0, 1]:
+            for dx in [-1, 0, 1]:
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx_ = y + dy, x + dx
+                if (ny, nx_) in G.nodes:
+                    G.add_edge((y, x), (ny, nx_), weight=1)
 
-    while queue:
-        y, x = queue.popleft()
-        if (y, x) == end:
-            return dist[end]  # shortest path length
-
-        for dy, dx in neighbors:
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w:
-                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    dist[ny, nx] = dist[y, x] + 1
-                    queue.append((ny, nx))
-    return -1  # no path found
-
-def is_path_between_points(skeleton, start, end):
-    h, w = skeleton.shape
-    visited = np.zeros_like(skeleton, dtype=bool)
-    queue = deque([start])
-    visited[start] = True
-    
-    # 8-connected neighbors relative positions
-    neighbors = [(-1, -1), (-1, 0), (-1, 1),
-                 (0, -1),           (0, 1),
-                 (1, -1),  (1, 0),  (1, 1)]
-    
-    while queue:
-        y, x = queue.popleft()
-        if (y, x) == end:
-            return True
-        
-        for dy, dx in neighbors:
-            ny, nx = y + dy, x + dx
-            if 0 <= ny < h and 0 <= nx < w:
-                if skeleton[ny, nx] > 0 and not visited[ny, nx]:
-                    visited[ny, nx] = True
-                    queue.append((ny, nx))
-    return False
+    return G
 
 
-def is_y_branch_point(x, y, img):
-    # 8-connected neighbors in clockwise order (P2 to P9)
-    neighbors = [
-        img[x-1, y],   # P2
-        img[x-1, y+1], # P3
-        img[x, y+1],   # P4
-        img[x+1, y+1], # P5
-        img[x+1, y],   # P6
-        img[x+1, y-1], # P7
-        img[x, y-1],   # P8
-        img[x-1, y-1]  # P9
-    ]
-    neighbors = [int(n > 0) for n in neighbors]
+def heuristic(n, goal, G):
+    # Encourage moving downhill in Coulomb potential (toward center)
+    potential_n = G.nodes[n]['potential']
+    potential_goal = G.nodes[goal]['potential']
+    return max(0, potential_n - potential_goal)
 
-    # Count 0 -> 1 transitions in circular neighborhood
-    transitions = sum((neighbors[i] == 0 and neighbors[(i + 1) % 8] == 1) for i in range(8))
+def compute_path_cost(G, path):
+    total_cost = 0
+    for i in range(len(path) - 1):
+        edge_data = G.get_edge_data(path[i], path[i+1])
+        # edge_data is a dict, 'weight' should be there
+        total_cost += edge_data.get('weight', 1)  # default 1 if missing
+    return total_cost
 
-    return transitions >= 3
+def dijkstra_cheapest_path_nx(G, start, end):
+    try:
+        path = nx.dijkstra_path(G, source=start, target=end, weight='weight')
+        cost = nx.dijkstra_path_length(G, source=start, target=end, weight='weight')
+        return path, cost
+    except nx.NetworkXNoPath:
+        return None, np.inf
+
 
 '''
 python3 segmentation/scripts/kmeans.py -s /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26855.volpkg/volumes/20250214115505/1000.tif -k 3 -n 100
 '''
 
-# def select_n_points(pointset, required_number):
-#     # Get the uniform interval
-#     d = len(pointset)//required_number
-#     final_pointset = []
-#     # Start with the starting point and keep on selecting points until the last point
-#     for i in range(required_number-1):
-#         final_pointset.append(pointset[i*d])
-#     final_pointset.append(pointset[-1])
-#     return final_pointset
 def select_n_points(pointset, required_number):
     step = (len(pointset) - 1) / (required_number - 1)
     return [pointset[int(round(i * step))] for i in range(required_number)]
 
 
 def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
-         cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, num_seg_points: int = 1000):
+         cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, 
+         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
@@ -271,8 +235,12 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     cy, cx, _ = original_image.shape
 
     center_point = (cy//2, cx//2)
+
+    clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
+
+    print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
     
-    _, binary = cv2.threshold(clustered, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     
     skeleton = cv2.ximgproc.thinning(binary)
         
@@ -288,30 +256,26 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
         cv2.imwrite(f'{save_at_cluster}/skeleton.jpg', skeleton)
         cv2.imwrite(f'{save_at_cluster}/binary.jpg', binary)
+        cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
+        
     
 
     for idx in range(1, num_labels):  # skip background
         component_mask = (labels == idx).astype(np.uint8)
 
-        endpoints = find_endpoints(component_mask=component_mask)
+        graph = skeleton_to_graph(skeleton=component_mask)
+
+        endpoints = find_graph_endpoints(G=graph)
         
         num_points = cv2.countNonZero(component_mask)
 
         if num_points < num_seg_points:
-            # print(f"Number of points less than {num_seg_points}. Skipping component.")
             continue
 
         print(f"\nComponent {idx} (Cluster: {cluster_id}): {num_points} points")
 
 
-        y_branch_points = []
-        padded = np.pad(component_mask, 1, mode='constant')
-        h, w = component_mask.shape
-
-        for x in range(1, h + 1):
-            for y in range(1, w + 1):
-                if padded[x, y] == 1 and is_y_branch_point(x, y, padded):
-                    y_branch_points.append((x - 1, y - 1))
+        y_branch_points = find_graph_junctions(G=graph)
 
         if len(y_branch_points) > 0:
             print(f"Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).")
@@ -332,22 +296,32 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             color_overlay[y, x] = [0, 255, 255]
         
         for yb in y_branch_points:
-            cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green 
+            cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green
         
-        pathlen = 0
-        start = (0,0)
-        end = (0,0)
-        for p1, p2 in combinations(endpoints, 2):
-            q = shortest_path_length(binary, p1, p2)
-            if q >= pathlen:
-                pathlen = q
-                start, end = p1, p2
-        
-        print(f'Start: {start}, End: {end}')
+
+        weighted_graph = skeleton_to_weighted_graph_1_weight(skeleton=component_mask, center_point=center_point, image=clustered, alpha=intensity_alpha)
+        paths=[]
+        costs=[]
+        uvs = []
+        print(f'Now computing A*')
+        for u, v in permutations(endpoints, 2): # go two ways: (u->v), and (v->u)
+            pth = nx.astar_path(
+                    weighted_graph, u, v,
+                    heuristic=lambda n, g: heuristic(n, g, weighted_graph),
+                    weight='weight'
+                )
+            cst = compute_path_cost(weighted_graph, pth)
+            paths.append(pth)
+            uvs.append((u,v))
+            costs.append(cst)
+        expensive_idx = np.argmax(np.array([costs]))
+        shortestpath = paths[expensive_idx]
+        shortestdist = costs[expensive_idx]
+        start, end = uvs[expensive_idx][0], uvs[expensive_idx][1]
+
         cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
         cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
-        
-        shortestpath, shortestdist = dijkstra_cheapest_path(skeleton=binary, start=start, end=end, center_point=center_point)
+
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
         if total_seg_points:
             print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
@@ -360,13 +334,13 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             with open(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
                 f.write(f'x,y\n')
                 for spidx, sp in enumerate(shortestpath):
-                    cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
+                    cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                     f.write(f'{sp[1]},{sp[0]}\n')
                     pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
                 f.write(f'Cost: {shortestdist}')
         else:
             for spidx, sp in enumerate(shortestpath):
-                cv2.circle(color_overlay, (sp[1], sp[0]), 1, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),1)
+                cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                 pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
         print(f'Length of pointset[0]: {len(pointset[0])}')
         
@@ -403,7 +377,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     
 
 def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, total_seg_points: int, threshold_factor:float=2.0, cv_show: bool=True, 
-           cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000):
+           cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000, gaussian_kernel: int=5,
+           intensity_alpha: float=1):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -455,7 +430,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
         print(f"Starting thinning for cluster {cluster_id}")
         thin(volpkg_dir=volpkg_dir, original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
              cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask, volume=volume,
-             film_slice=film_slice, total_seg_points=total_seg_points)
+             film_slice=film_slice, total_seg_points=total_seg_points, gaussian_kernel=gaussian_kernel, intensity_alpha=intensity_alpha)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -475,6 +450,8 @@ def main():
     parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
     parser.add_argument('--total-seg-points', '-s', help="Total number of segmentation points.", type=int)
     parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. This should be outside volpkg. Default: Nothing will be saved", type=str)
+    parser.add_argument('--gaussian-kernel',help="Enter the kernel height. It will be treated as nxn.", type=int, default=5)
+    parser.add_argument('--intensity-alpha',help="Enter weight for intensity importance.", type=float, default=1)
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
@@ -491,6 +468,8 @@ def main():
     number_of_clusters = args.number_of_clusters
     num_seg_points = args.num_seg_points
     total_seg_points = args.total_seg_points
+    intensity_alpha = args.intensity_alpha
+    gaussian_kernel = args.gaussian_kernel
     if total_seg_points:
         print(f'Reduction in points needed to {total_seg_points}')
 
@@ -505,7 +484,8 @@ def main():
     
 
     kmeans(volpkg_dir=volpkg, film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
-           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points)
+           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points,
+           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel)
 
 
 if __name__ == "__main__":
