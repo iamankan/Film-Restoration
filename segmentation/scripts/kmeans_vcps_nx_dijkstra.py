@@ -266,6 +266,9 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
         cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
 
+        cv2.circle(colored_path, (start[1], start[0]), 10, (0,255,0),2) # start - Green
+        cv2.circle(colored_path, (end[1], end[0]), 10, (0,0,255),2) # end - Red
+
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
         if total_seg_points:
             print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
@@ -279,12 +282,14 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                 f.write(f'x,y\n')
                 for spidx, sp in enumerate(shortestpath):
                     cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+                    cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                     f.write(f'{sp[1]},{sp[0]}\n')
                     pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
                 f.write(f'Cost: {shortestdist}')
         else:
             for spidx, sp in enumerate(shortestpath):
                 cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+                cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                 pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
         print(f'Length of pointset[0]: {len(pointset[0])}')
         
@@ -299,10 +304,10 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             print('Finished writing meta.json and pointset.vcps')
         
 
-        colored_path = cv2.bitwise_or(colored_path, color_overlay)
+        # colored_path = cv2.bitwise_or(colored_path, color_overlay)
         
 
-        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (0,0,255), 5)
+        cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (125,255,255), 5)
 
         if cv_show:
             cv2.imshow(f"Cluster {cluster_id} | Component {idx} - Skeleton Overlay", color_overlay)
