@@ -104,26 +104,6 @@ def find_graph_endpoints(G):
 def find_graph_junctions(G):
     return [n for n in G.nodes if G.degree[n] >= 3] # list of (y,x)
 
-# def skeleton_to_weighted_graph(skeleton, center_point):
-#     G = nx.Graph()
-#     h, w = skeleton.shape
-
-#     for y in range(h):
-#         for x in range(w):
-#             if skeleton[y, x]:
-#                 for dy in [-1, 0, 1]:
-#                     for dx in [-1, 0, 1]:
-#                         if dy == 0 and dx == 0:
-#                             continue
-#                         ny, nx_ = y + dy, x + dx
-#                         if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
-#                             # Average distance to center_point
-#                             dist1 = np.linalg.norm(np.array([y, x]) - center_point)
-#                             dist2 = np.linalg.norm(np.array([ny, nx_]) - center_point)
-#                             avg_dist = (dist1 + dist2) / 2
-#                             G.add_edge((y, x), (ny, nx_), weight=avg_dist)
-#     return G
-
 def skeleton_to_weighted_graph(skeleton, center_point, image, alpha=1.0):
     G = nx.Graph()
     h, w = skeleton.shape
@@ -176,12 +156,14 @@ def select_n_points(pointset, required_number):
 
 def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
          cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, 
-         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1):
+         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1, mask_thickness: int=2):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
     img_max = original_image[:, :, 0].max()
     print(f'min: {img_min}, max: {img_max}')
+
+
 
     cy, cx, _ = original_image.shape
 
@@ -194,6 +176,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     
     skeleton = cv2.ximgproc.thinning(binary)
+
+    binary_segmentation_mask = np.zeros_like(original_image[:, :, 0])
         
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
@@ -249,7 +233,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green
         
 
-        weighted_graph = skeleton_to_weighted_graph(skeleton=component_mask, center_point=center_point, image=clustered, alpha=intensity_alpha)
+        weighted_graph = skeleton_to_weighted_graph(skeleton=component_mask, center_point=center_point, image=clustered, 
+                                                    alpha=intensity_alpha)
         paths=[]
         costs=[]
         uvs = []
@@ -271,9 +256,16 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
         print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
         if total_seg_points:
+            print(f'Saving the segmentation mask binary image.')
+            # binary_segmentation_mask
+            for sp in shortestpath:
+                cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
+                           mask_thickness)
             print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
             shortestpath = select_n_points(shortestpath, total_seg_points)
             print(f'Now the total points are {len(shortestpath)}')
+        
+
 
         pointset = [[]]
         slice_no = int(film_slice.stem)
@@ -321,13 +313,15 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
         cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
         cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_cluster{cluster_id}.jpg', img=colored_path)
+        cv2.imwrite(f'{save_at_cluster}/total_segmentation_mask_cluster{cluster_id}.jpg', img=binary_segmentation_mask)
+
 
     
     
 
 def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, total_seg_points: int, threshold_factor:float=2.0, cv_show: bool=True, 
            cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000, gaussian_kernel: int=5,
-           intensity_alpha: float=1):
+           intensity_alpha: float=1, mask_thickness: int=2):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -379,7 +373,8 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
         print(f"Starting thinning for cluster {cluster_id}")
         thin(volpkg_dir=volpkg_dir, original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
              cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask, volume=volume,
-             film_slice=film_slice, total_seg_points=total_seg_points, gaussian_kernel=gaussian_kernel, intensity_alpha=intensity_alpha)
+             film_slice=film_slice, total_seg_points=total_seg_points, gaussian_kernel=gaussian_kernel, 
+             intensity_alpha=intensity_alpha, mask_thickness=mask_thickness)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -401,6 +396,7 @@ def main():
     parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. This should be outside volpkg. Default: Nothing will be saved", type=str)
     parser.add_argument('--gaussian-kernel',help="Enter the kernel height. It will be treated as nxn.", type=int, default=5)
     parser.add_argument('--intensity-alpha',help="Enter weight for intensity importance.", type=float, default=1)
+    parser.add_argument('--mask-thickness', help="Thickness of the binary mask to be drawn", type=int, default=2)
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
@@ -419,6 +415,7 @@ def main():
     total_seg_points = args.total_seg_points
     intensity_alpha = args.intensity_alpha
     gaussian_kernel = args.gaussian_kernel
+    mask_thickness = args.mask_thickness
     if total_seg_points:
         print(f'Reduction in points needed to {total_seg_points}')
 
@@ -434,7 +431,7 @@ def main():
 
     kmeans(volpkg_dir=volpkg, film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
            cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points,
-           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel)
+           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel, mask_thickness=mask_thickness)
 
 
 if __name__ == "__main__":
