@@ -28,9 +28,9 @@ slice_name="0000.tif"
 slice_id="S${slice_name%.*}"  # Extracts '1000' and makes 'S1000'
 threshold_factor=2
 num_clusters=1
-num_seg_points=500
-total_seg_points=500
-intensity_alpha=2
+num_seg_points=1000
+total_seg_points=1000
+intensity_alpha=5
 
 # Base output paths
 base_out_astar="/localdisk0/thesis-images/ilford-kmeans-nx-astar-redo-1"
@@ -38,7 +38,7 @@ base_out_dijkstra="/localdisk0/thesis-images/ilford-kmeans-nx-dijkstra-redo-1"
 
 dataset_name="IBW-007"
 start_k=1
-end_k=13
+end_k=15
 diff_k=2
 
 # Kernel loop

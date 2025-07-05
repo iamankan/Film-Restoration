@@ -156,7 +156,8 @@ def select_n_points(pointset, required_number):
 
 def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
          cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, 
-         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1, mask_thickness: int=2):
+         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1, mask_thickness: int=2,
+         txt_coord: bool=False, write_vcps: bool=False):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
@@ -171,7 +172,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
 
-    print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
+    # print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
     
     _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     
@@ -181,7 +182,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         
 
     num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
-    print(f"Total components: {num_labels} (including background).")
+    # print(f"Total components: {num_labels} (including background).")
     if save_at:
         save_at_cluster = Path(save_at) / f'cluster_{cluster_id}'
         save_at_cluster.mkdir(parents=True, exist_ok=True)
@@ -206,21 +207,21 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         if num_points < num_seg_points:
             continue
 
-        print(f"\nComponent {idx} (Cluster: {cluster_id}): {num_points} points")
+        # print(f"\nComponent {idx} (Cluster: {cluster_id}): {num_points} points")
 
 
-        y_branch_points = find_graph_junctions(G=graph)
+        # y_branch_points = find_graph_junctions(G=graph)
 
-        if len(y_branch_points) > 0:
-            print(f"Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).")
-            if save_at:
-                with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f'Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
-        else:
-            print(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
-            if save_at:
-                with open(f'{save_at}/details.txt', 'a') as fid:
-                    fid.write(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
+        # if len(y_branch_points) > 0:
+        #     print(f"Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).")
+        #     if save_at:
+        #         with open(f'{save_at}/details.txt', 'a') as fid:
+        #             fid.write(f'Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
+        # else:
+        #     print(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
+        #     if save_at:
+        #         with open(f'{save_at}/details.txt', 'a') as fid:
+        #             fid.write(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
 
         # Draw pruned skeleton on original image as green dots
         color_overlay = cv2.cvtColor(original_image.copy(), cv2.COLOR_BGR2RGB)
@@ -229,8 +230,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         for (y, x) in zip(ys, xs):
             color_overlay[y, x] = [0, 255, 255]
         
-        for yb in y_branch_points:
-            cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green
+        # for yb in y_branch_points:
+        #     cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green
         
 
         weighted_graph = skeleton_to_weighted_graph(skeleton=component_mask, center_point=center_point, image=clustered, 
@@ -254,22 +255,22 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.circle(colored_path, (start[1], start[0]), 10, (0,255,0),2) # start - Green
         cv2.circle(colored_path, (end[1], end[0]), 10, (0,0,255),2) # end - Red
 
-        print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
+        # print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
         if total_seg_points:
-            print(f'Saving the segmentation mask binary image.')
+            # print(f'Saving the segmentation mask binary image.')
             # binary_segmentation_mask
             for sp in shortestpath:
                 cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
                            mask_thickness)
-            print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
+            # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
             shortestpath = select_n_points(shortestpath, total_seg_points)
-            print(f'Now the total points are {len(shortestpath)}')
+            # print(f'Now the total points are {len(shortestpath)}')
         
 
 
         pointset = [[]]
         slice_no = int(film_slice.stem)
-        if save_at:
+        if save_at and txt_coord:
             with open(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
                 f.write(f'x,y\n')
                 for spidx, sp in enumerate(shortestpath):
@@ -277,23 +278,24 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                     cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                     f.write(f'{sp[1]},{sp[0]}\n')
                     pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
-                f.write(f'Cost: {shortestdist}')
+                # f.write(f'Cost: {shortestdist}')
         else:
             for spidx, sp in enumerate(shortestpath):
                 cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                 cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                 pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
-        print(f'Length of pointset[0]: {len(pointset[0])}')
+        # print(f'Length of pointset[0]: {len(pointset[0])}')
         
         if len(pointset[0])>0:
             pointset = np.array(pointset)
-            seg_id = f'{get_date()}_kmeans_thin'
-            seg_path = volpkg_dir / f'paths/{seg_id}'
-            seg_path.mkdir(exist_ok=True, parents=True)
-            print(f'Generated segmentation id: {seg_id} and the path is {seg_path}')
-            write_ordered_vcps(path=seg_path, pointset=pointset)
-            write_metadata(path=seg_path, uuid_val=seg_id, vol=volume)
-            print('Finished writing meta.json and pointset.vcps')
+            seg_id = f'{get_date()}_kmeans_thin_dijkstra_k_{gaussian_kernel}'
+            if write_vcps:
+                seg_path = volpkg_dir / f'paths/{seg_id}'
+                seg_path.mkdir(exist_ok=True, parents=True)
+                print(f'Generated segmentation id: {seg_id} and the path is {seg_path}')
+                write_ordered_vcps(path=seg_path, pointset=pointset)
+                write_metadata(path=seg_path, uuid_val=seg_id, vol=volume)
+                print('Finished writing meta.json and pointset.vcps')
         
 
         # colored_path = cv2.bitwise_or(colored_path, color_overlay)
@@ -311,9 +313,9 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     
     if save_at:
         print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
-        cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
-        cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_cluster{cluster_id}.jpg', img=colored_path)
-        cv2.imwrite(f'{save_at_cluster}/total_segmentation_mask_cluster{cluster_id}.jpg', img=binary_segmentation_mask)
+        # cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
+        cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_K_{gaussian_kernel}_cluster{cluster_id}.jpg', img=colored_path)
+        cv2.imwrite(f'{save_at_cluster}/total_segmentation_mask_K_{gaussian_kernel}cluster{cluster_id}.jpg', img=binary_segmentation_mask)
 
 
     
@@ -321,7 +323,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
 def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, total_seg_points: int, threshold_factor:float=2.0, cv_show: bool=True, 
            cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000, gaussian_kernel: int=5,
-           intensity_alpha: float=1, mask_thickness: int=2):
+           intensity_alpha: float=1, mask_thickness: int=2, txt_coord: bool=False, write_vcps: bool=False):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -374,7 +376,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
         thin(volpkg_dir=volpkg_dir, original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
              cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask, volume=volume,
              film_slice=film_slice, total_seg_points=total_seg_points, gaussian_kernel=gaussian_kernel, 
-             intensity_alpha=intensity_alpha, mask_thickness=mask_thickness)
+             intensity_alpha=intensity_alpha, mask_thickness=mask_thickness, txt_coord=txt_coord, write_vcps=write_vcps)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -396,7 +398,9 @@ def main():
     parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. This should be outside volpkg. Default: Nothing will be saved", type=str)
     parser.add_argument('--gaussian-kernel',help="Enter the kernel height. It will be treated as nxn.", type=int, default=5)
     parser.add_argument('--intensity-alpha',help="Enter weight for intensity importance.", type=float, default=1)
+    parser.add_argument('--txt-coord', help="Use this flag to turn on writing coors to a txt file. (Turned OFF by default.)", action='store_true')
     parser.add_argument('--mask-thickness', help="Thickness of the binary mask to be drawn", type=int, default=2)
+    parser.add_argument('--write-vcps',help="Enter to write vcps.", action='store_true')
     parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
     parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
     args = parser.parse_args()
@@ -416,6 +420,9 @@ def main():
     intensity_alpha = args.intensity_alpha
     gaussian_kernel = args.gaussian_kernel
     mask_thickness = args.mask_thickness
+    txt_coord = args.txt_coord
+    write_vcps = args.write_vcps
+    print(f'Writing coords to txt file: {txt_coord}')
     if total_seg_points:
         print(f'Reduction in points needed to {total_seg_points}')
 
@@ -431,7 +438,8 @@ def main():
 
     kmeans(volpkg_dir=volpkg, film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
            cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points,
-           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel, mask_thickness=mask_thickness)
+           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel, mask_thickness=mask_thickness, txt_coord=txt_coord,
+           write_vcps=write_vcps)
 
 
 if __name__ == "__main__":
