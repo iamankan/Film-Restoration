@@ -1,0 +1,507 @@
+import argparse
+import cv2
+import numpy as np
+from pathlib import Path
+import imageio.v3 as iio
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib
+from scipy.ndimage import convolve
+import networkx as ntx
+from scipy.spatial.distance import euclidean
+matplotlib.use('TkAgg')
+from collections import deque
+import heapq
+from math import sqrt 
+import uuid
+from itertools import combinations, permutations
+from sklearn.cluster import KMeans
+import json
+import datetime as dt
+import networkx as nx
+
+
+# From quicksegment https://github.com/educelab/quick-segment/blob/develop/qs/data/vcps.py
+def get_date():
+    tz = dt.timezone.utc
+    return f'{dt.datetime.now(tz).strftime("%Y%m%d%H%M%S")}'
+
+
+def write_ordered_vcps(path, pointset):
+    # Open output file and write ASCII header
+    file_path = Path(path) / "pointset.vcps"    
+    with file_path.open('wt') as file:
+        file.writelines([
+            f'width: {pointset.shape[1]}\n', # number of points
+            f'height: {pointset.shape[0]}\n', # total number of slices
+            f'dim: {pointset.shape[2]}\n', # number of coordinates
+            'ordered: true\n',
+            'type: double\n',
+            'version: 1\n',
+            '<>\n'
+        ])
+
+    # Reopen in binary append mode
+    with file_path.open('ab') as file:
+        # Write as doubles
+        pointset.tofile(file)
+
+def write_metadata(path, vol, uuid_val):
+
+    data = {
+        "name": str(uuid_val),
+        "type": "seg",
+        "uuid": str(uuid_val),
+        "vcps": "pointset.vcps",
+        "volume": vol
+    }
+
+    with open(path / "meta.json", 'w', encoding='utf-8') as f:
+        f.write(json.dumps(data, indent=2))
+
+def write_vcps(filename, points):
+    
+    with open(filename, 'wb') as f:
+        # Write ASCII header
+        f.write(f"width: {points.shape[0]}\n".encode('ascii'))
+        f.write(f"height: {1}\n".encode('ascii'))
+        f.write(f"dim: {points.shape[1]}\n".encode('ascii'))
+        f.write(f"ordered: true\n".encode('ascii'))
+        f.write(f"type: double\n".encode('ascii'))
+        f.write(f"version: 1\n".encode('ascii'))
+        f.write(b"<>\n")
+        
+        f.write(points.astype(np.double).tobytes())
+
+
+def euclidean(p1, p2):
+    return sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+
+
+################USING GRAPH Networkx######################
+def skeleton_to_graph(skeleton):
+    G = nx.Graph()
+    h, w = skeleton.shape
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                # Add current pixel as a node
+                G.add_node((y, x))
+
+                # Check 8-connected neighbors
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        if dy == 0 and dx == 0:
+                            continue
+                        ny, nx_ = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
+                            G.add_edge((y, x), (ny, nx_))
+    return G
+
+def find_graph_endpoints(G):
+    return [n for n in G.nodes if G.degree[n] == 1] # list of (y,x)
+
+def find_graph_junctions(G):
+    return [n for n in G.nodes if G.degree[n] >= 3] # list of (y,x)
+
+
+def skeleton_to_weighted_graph(skeleton, center_point, image, alpha=1.0):
+    G = nx.Graph()
+    h, w = skeleton.shape
+    image = image.astype(np.float32)
+    image_norm = (image - image.min()) / (image.max() - image.min() + 1e-8)
+    print(f'Image normalized: {image_norm.min(), image_norm.max()}')
+
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                for dy in [-1, 0, 1]:
+                    for dx in [-1, 0, 1]:
+                        if dy == 0 and dx == 0:
+                            continue
+                        ny, nx_ = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx_ < w and skeleton[ny, nx_]:
+                            # Distance to center
+                            dist1 = np.linalg.norm(np.array([y, x]) - center_point)
+                            dist2 = np.linalg.norm(np.array([ny, nx_]) - center_point)
+                            avg_dist = (dist1 + dist2) / 2
+
+                            # Brightness penalty
+                            b1 = image_norm[y, x]
+                            b2 = image_norm[ny, nx_]
+                            avg_brightness = (b1 + b2) / 2
+                            brightness_penalty = 1.0 - avg_brightness
+
+                            # Total cost
+                            cost = avg_dist + alpha * brightness_penalty
+                            G.add_edge((y, x), (ny, nx_), weight=cost)
+    return G
+
+def compute_charge(y, x, image_norm):
+    # Here, node charge is just brightness normalized at that pixel
+    return image_norm[y, x]
+
+def compute_coulomb_potential(y, x, center_point, q_node, Q_center=1.0, epsilon=1e-8):
+    r = np.linalg.norm(np.array([y, x]) - center_point)
+    return Q_center * q_node / (r + epsilon)
+
+def skeleton_to_weighted_graph_1_weight(skeleton, center_point, image, alpha=1.0):
+    G = nx.Graph()
+    h, w = skeleton.shape
+    image = image.astype(np.float32)
+    image_norm = (image - image.min()) / (image.max() - image.min() + 1e-8)
+    Q_center = image_norm[center_point[0]][center_point[1]]
+
+    for y in range(h):
+        for x in range(w):
+            if skeleton[y, x]:
+                q_node = alpha*compute_charge(y, x, image_norm)
+                potential = compute_coulomb_potential(y, x, center_point, q_node, Q_center)
+                G.add_node((y, x), charge=q_node, potential=potential)
+
+    # Connect neighbors with uniform weight (or customize)
+    for (y, x) in G.nodes:
+        for dy in [-1, 0, 1]:
+            for dx in [-1, 0, 1]:
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx_ = y + dy, x + dx
+                if (ny, nx_) in G.nodes:
+                    G.add_edge((y, x), (ny, nx_), weight=1)
+
+    return G
+
+
+def heuristic(n, goal, G):
+    # Encourage moving downhill in Coulomb potential (toward center)
+    potential_n = G.nodes[n]['potential']
+    potential_goal = G.nodes[goal]['potential']
+    return max(0, potential_n - potential_goal)
+
+def compute_path_cost(G, path):
+    total_cost = 0
+    for i in range(len(path) - 1):
+        edge_data = G.get_edge_data(path[i], path[i+1])
+        # edge_data is a dict, 'weight' should be there
+        total_cost += edge_data.get('weight', 1)  # default 1 if missing
+    return total_cost
+
+def dijkstra_cheapest_path_nx(G, start, end):
+    try:
+        path = nx.dijkstra_path(G, source=start, target=end, weight='weight')
+        cost = nx.dijkstra_path_length(G, source=start, target=end, weight='weight')
+        return path, cost
+    except nx.NetworkXNoPath:
+        return None, np.inf
+
+
+'''
+python3 segmentation/scripts/kmeans.py -s /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26855.volpkg/volumes/20250214115505/1000.tif -k 3 -n 100
+'''
+
+def select_n_points(pointset, required_number):
+    step = (len(pointset) - 1) / (required_number - 1)
+    return [pointset[int(round(i * step))] for i in range(required_number)]
+
+
+def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
+         cluster_mask: np.array, total_seg_points: int, threshold_factor: float = 2.0, cv_show: bool=True, cv_wait_key_val: int=0, 
+         num_seg_points: int = 1000, gaussian_kernel: int=5, intensity_alpha: float=1, mask_thickness: int=2,
+         txt_coord: bool=False, write_vcps: bool=False):
+    
+    # print(f'Shape of the film slice is: {original_image.shape}')
+    img_min = original_image[:, :, 0].min()
+    img_max = original_image[:, :, 0].max()
+    # print(f'min: {img_min}, max: {img_max}')
+
+    cy, cx, _ = original_image.shape
+
+    center_point = (cy//2, cx//2)
+
+    clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
+
+    # print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
+    
+    _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    
+    skeleton = cv2.ximgproc.thinning(binary)
+
+    binary_segmentation_mask = np.zeros_like(original_image[:, :, 0])
+
+    total_segments = 0
+        
+
+    num_labels, labels = cv2.connectedComponents(skeleton, connectivity=8)
+    # print(f"Total components: {num_labels} (including background).")
+    if save_at:
+        save_at_cluster = Path(save_at) / f'cluster_{cluster_id}'
+        save_at_cluster.mkdir(parents=True, exist_ok=True)
+        # colored_path = original_image.copy()
+        # cv2.imwrite(f'{save_at_cluster}/original_image.jpg', original_image)
+        # cv2.imwrite(f'{save_at_cluster}/cluster_mask.jpg', cluster_mask)
+        # cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
+        # cv2.imwrite(f'{save_at_cluster}/skeleton_{gaussian_kernel}.jpg', skeleton)
+        # cv2.imwrite(f'{save_at_cluster}/binary_{gaussian_kernel}.jpg', binary)
+        # cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
+        
+    
+
+    for idx in range(1, num_labels):  # skip background
+        component_mask = (labels == idx).astype(np.uint8)
+
+        graph = skeleton_to_graph(skeleton=component_mask)
+
+        endpoints = find_graph_endpoints(G=graph)
+        
+        num_points = cv2.countNonZero(component_mask)
+
+        if num_points < num_seg_points:
+            continue
+
+        # print(f"\nComponent {idx} (Cluster: {cluster_id}): {num_points} points")
+
+
+        # y_branch_points = find_graph_junctions(G=graph)
+
+        # if len(y_branch_points) > 0:
+        #     print(f"Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).")
+        #     if save_at:
+        #         with open(f'{save_at}/details.txt', 'a') as fid:
+        #             fid.write(f'Component {idx} (Cluster: {cluster_id}) contains Y-branching structure ({len(y_branch_points)} Y-points).\n')
+        # else:
+        #     print(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
+        #     if save_at:
+        #         with open(f'{save_at}/details.txt', 'a') as fid:
+        #             fid.write(f"Component {idx} (Cluster: {cluster_id}) has no Y-junctions.")
+
+        # Draw pruned skeleton on original image as green dots
+        # color_overlay = cv2.cvtColor(original_image.copy(), cv2.COLOR_BGR2RGB)
+
+        ys, xs = np.where(component_mask == 1)
+        # for (y, x) in zip(ys, xs):
+        #     color_overlay[y, x] = [0, 255, 255]
+        
+        # for yb in y_branch_points:
+        #     cv2.circle(color_overlay, (yb[1], yb[0]), 1, (255,0,0), 1) # green
+        
+
+        weighted_graph = skeleton_to_weighted_graph_1_weight(skeleton=component_mask, center_point=center_point, image=clustered, 
+                                                             alpha=intensity_alpha)
+        paths=[]
+        costs=[]
+        uvs = []
+        print(f'Now computing A*')
+        for u, v in permutations(endpoints, 2): # go two ways: (u->v), and (v->u)
+            pth = nx.astar_path(
+                    weighted_graph, u, v,
+                    heuristic=lambda n, g: heuristic(n, g, weighted_graph),
+                    weight='weight'
+                )
+            cst = compute_path_cost(weighted_graph, pth)
+            paths.append(pth)
+            uvs.append((u,v))
+            costs.append(cst)
+        expensive_idx = np.argmax(np.array([costs]))
+        shortestpath = paths[expensive_idx]
+        shortestdist = costs[expensive_idx]
+        start, end = uvs[expensive_idx][0], uvs[expensive_idx][1]
+
+        # cv2.circle(color_overlay, (start[1], start[0]), 10, (0,255,0),2) # start - Green
+        # cv2.circle(color_overlay, (end[1], end[0]), 10, (0,0,255),2) # end - Red
+
+        # cv2.circle(colored_path, (start[1], start[0]), 10, (0,255,0),2) # start - Green
+        # cv2.circle(colored_path, (end[1], end[0]), 10, (0,0,255),2) # end - Red
+
+        # print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
+        if total_seg_points:
+            # print(f'Saving the segmentation mask binary image.')
+            # binary_segmentation_mask
+            for sp in shortestpath:
+                cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
+                           mask_thickness)
+            # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
+            # shortestpath = select_n_points(shortestpath, total_seg_points)
+            # print(f'Now the total points are {len(shortestpath)}')
+
+        # pointset = [[]]
+        # slice_no = int(film_slice.stem)
+        slice_id=film_slice.stem
+        # for spidx, sp in enumerate(shortestpath):
+        #     f.write(f'{sp[1]},{sp[0]}\n')
+        #     pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
+        # if save_at and txt_coord:
+        #     with open(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
+        #         f.write(f'x,y\n')
+        #         for spidx, sp in enumerate(shortestpath):
+        #             # cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+        #             # cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+        #             f.write(f'{sp[1]},{sp[0]}\n')
+        #             pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
+        #         # f.write(f'Cost: {shortestdist}')
+        # else:
+        #     for spidx, sp in enumerate(shortestpath):
+        #         # cv2.circle(color_overlay, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+        #         # cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
+        #         pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
+        # print(f'Length of pointset[0]: {len(pointset[0])}')
+        if len(shortestpath):
+            total_segments = total_segments+1
+        # if len(pointset[0])>0:
+        #     total_segments = total_segments + 1
+            # pointset = np.array(pointset)
+            # seg_id = f'{get_date()}_kmeans_thin_astar_k_{gaussian_kernel}'
+            # if write_vcps:
+            #     seg_path = volpkg_dir / f'paths/{seg_id}'
+            #     seg_path.mkdir(exist_ok=True, parents=True)
+            #     print(f'Generated segmentation id: {seg_id} and the path is {seg_path}')
+            #     write_ordered_vcps(path=seg_path, pointset=pointset)
+            #     write_metadata(path=seg_path, uuid_val=seg_id, vol=volume)
+            #     print('Finished writing meta.json and pointset.vcps')
+        
+
+        # colored_path = cv2.bitwise_or(colored_path, color_overlay)
+        
+
+        # cv2.line(color_overlay, (start[1], start[0]), (end[1], end[0]), (125,255,255), 5)
+
+        # if cv_show:
+        #     cv2.imshow(f"Cluster {cluster_id} | Component {idx} - Skeleton Overlay", color_overlay)
+        #     cv2.waitKey(cv_wait_key_val)
+
+        # if save_at:
+        #     if len(pointset[0])>0:
+        #         cv2.imwrite(f'{save_at_cluster}/segmented_{seg_id}_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
+    
+    if save_at:
+        print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
+        # cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
+        # cv2.imwrite(f'{save_at_cluster}/total_colored_segmentation_K_{gaussian_kernel}_astar_cluster{cluster_id}.jpg', img=colored_path)
+        # cv2.imwrite(f'{save_at_cluster}/total_segmentation_mask_K_{gaussian_kernel}_astar_cluster{cluster_id}.jpg', img=binary_segmentation_mask)
+        cv2.imwrite(f'{save_at_cluster}/astar_mask.jpg', img=binary_segmentation_mask)
+        with open("/localdisk0/thesis-images/nx-vol/stats.txt","a") as f:
+            f.write(f"Astar,{slice_id},{gaussian_kernel},{num_seg_points},{total_segments}\n")
+
+    
+
+def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, total_seg_points: int, threshold_factor:float=2.0, cv_show: bool=True, 
+           cv_wait_key: bool=False, number_of_clusters: int = 3, num_seg_points: int = 1000, gaussian_kernel: int=5,
+           intensity_alpha: float=1, mask_thickness: int=2, txt_coord: bool=False, write_vcps:bool = False):
+    
+    if output_folder:
+        uuid_id = str(uuid.uuid4())
+        save_at = Path(output_folder) / uuid_id
+        print(f"Saving things at {save_at}")
+        save_at.mkdir(parents=True, exist_ok=True)
+        with open(f'{save_at}/details.txt', 'w') as fid:
+            fid.write(f'KMEANS->Thinning\nFilm slice: {film_slice}\nthreshold factor: {threshold_factor}\nnumber of clusters: {number_of_clusters}\nmax_num_of_seg_points: {num_seg_points}\n')
+    else:
+        print(f"Nothing is being saved. So, you will see the outputs. And press a key after every output to see the next.")
+        cv_show = True
+        cv_wait_key = True
+        save_at = None
+
+    if cv_wait_key:
+        cv_wait_key_val = 0 # Wait if true
+    else:
+        cv_wait_key_val = 1 # Don't wait if false
+    
+
+
+    original_image = cv2.imread(film_slice)
+    if original_image is None:
+        print("Failed to load original image.")
+        return
+
+    img = cv2.imread(film_slice, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        print("Failed to load image.")
+        return
+
+    h, w = img.shape
+    flat_img = img.reshape(-1, 1)
+
+    # Apply KMeans
+    kmeans = KMeans(n_clusters=number_of_clusters, random_state=0, n_init="auto")
+    kmeans.fit(flat_img)
+    labels = kmeans.labels_.reshape(h, w)
+
+    # Display each cluster separately
+    for cluster_id in range(0, number_of_clusters):
+        mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
+        cluster_img = cv2.bitwise_and(img, img, mask=mask)
+        print(f'cluster_img shape: {cluster_img.shape}')
+
+    for cluster_id in range(0, number_of_clusters):
+        mask = (labels == cluster_id).astype(np.uint8) * 255  # Binary mask
+        cluster_img = cv2.bitwise_and(img, img, mask=mask)
+        print(f"Starting thinning for cluster {cluster_id}")
+        thin(volpkg_dir=volpkg_dir, original_image=original_image, clustered=cluster_img, save_at=save_at, cluster_id=cluster_id, cv_show=cv_show,
+             cv_wait_key_val=cv_wait_key_val, num_seg_points=num_seg_points, threshold_factor=threshold_factor, cluster_mask=mask, volume=volume,
+             film_slice=film_slice, total_seg_points=total_seg_points, gaussian_kernel=gaussian_kernel, 
+             intensity_alpha=intensity_alpha, mask_thickness=mask_thickness, txt_coord=txt_coord, write_vcps=write_vcps)
+    
+    print("Press any key to exit the program!")
+    cv2.waitKey(cv_wait_key_val)
+    cv2.destroyAllWindows()
+
+
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--volpkg', help="Path to the volpkg.", type=str)
+    parser.add_argument('--volume', help="Volume ID inside the volpkg.", type=str)
+    parser.add_argument('--slice-name', help="Name of the slice to segment. DEFAULT: 0000.tif", type=str, default='0000.tif')
+
+    parser.add_argument('--threshold-factor', '-t', help="Factor by which the threshold is divided.", type=float, default=2.0)
+    parser.add_argument('--number-of-clusters', '-k', help="Number of clusters you are expecting. DEFAULT=3", type=int, default=3)
+    parser.add_argument('--num-seg-points', '-n', help="Minimum number of segmentation points.", type=int, default=1000)
+    parser.add_argument('--total-seg-points', '-s', help="Total number of segmentation points.", type=int)
+    parser.add_argument('--output-folder','-o', help="Output folder where the images will be saved. This should be outside volpkg. Default: Nothing will be saved", type=str)
+    parser.add_argument('--gaussian-kernel',help="Enter the kernel height. It will be treated as nxn.", type=int, default=5)
+    parser.add_argument('--intensity-alpha',help="Enter weight for intensity importance.", type=float, default=1)
+    parser.add_argument('--mask-thickness', help="Thickness of the binary mask to be drawn", type=int, default=2)
+    parser.add_argument('--txt-coord', help="Use this flag to turn on writing coors to a txt file. (Turned OFF by default.)", action='store_true')
+    parser.add_argument('--write-vcps',help="Enter to write vcps.", action='store_true')
+    parser.add_argument('--cv-wait-key',help="Enter to wait.", action='store_true')
+    parser.add_argument('--cv-show',help="Enter to wait.", action='store_true')
+    args = parser.parse_args()
+
+    volpkg = Path(args.volpkg)
+    volume = args.volume
+    film_slice = volpkg / f'volumes/{volume}/{args.slice_name}'
+    if not film_slice.exists():
+        print(f'{film_slice} does not exist!')
+        return
+
+
+    threshold_factor = args.threshold_factor
+    number_of_clusters = args.number_of_clusters
+    num_seg_points = args.num_seg_points
+    total_seg_points = args.total_seg_points
+    intensity_alpha = args.intensity_alpha
+    gaussian_kernel = args.gaussian_kernel
+    mask_thickness = args.mask_thickness
+    txt_coord = args.txt_coord
+    write_vcps = args.write_vcps
+    if total_seg_points:
+        print(f'Reduction in points needed to {total_seg_points}')
+
+    output_folder = args.output_folder
+    cv_wait_key = args.cv_wait_key
+    cv_show = args.cv_show
+    print(f'CV_WAIT_KEY: {cv_wait_key}, CV_SHOW: {cv_show}')
+
+    if number_of_clusters==0:
+        print("Number of clusters cannot be zero.")
+        return
+    
+
+    kmeans(volpkg_dir=volpkg, film_slice=film_slice, number_of_clusters=number_of_clusters, num_seg_points=num_seg_points, output_folder=output_folder, 
+           cv_wait_key=cv_wait_key, cv_show=cv_show, threshold_factor=threshold_factor, volume=volume, total_seg_points=total_seg_points,
+           intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel, mask_thickness=mask_thickness,
+           txt_coord=txt_coord,write_vcps=write_vcps)
+
+
+if __name__ == "__main__":
+    main()
