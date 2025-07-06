@@ -17,14 +17,17 @@ FRANGI_ALPHA=0.5
 FRANGI_BETA=0.5
 FRANGI_GAMMA=1
 
+WRITE_VCPS=false
+
 print_help() {
-    echo "Usage: $0 --input-dir <path> --output-dir <path> [--help]"
+    echo "Usage: $0 --input-dir <path> --output-dir <path> [--write-vcps] [--help]"
     echo ""
     echo "Required:"
     echo "  --input-dir        Path to the directory containing *.volpkg folders"
     echo "  --output-dir       Path to the base output directory"
     echo ""
-    echo "Optional (editable inside script):"
+    echo "Optional:"
+    echo "  --write-vcps       Save VCPS intermediate files (adds --write-vcps to Python call)"
     echo "  --help             Show this help message and exit"
     echo ""
     echo "Fixed parameters:"
@@ -33,6 +36,9 @@ print_help() {
     echo "  --intensity-alpha $INTENSITY_ALPHA"
     echo "  --mask-thickness $MASK_THICKNESS"
     echo "  --slice-name $SLICE_NAME"
+    echo "  --frangi-sigma-min $FRANGI_SIGMA_MIN  --frangi-sigma-max $FRANGI_SIGMA_MAX"
+    echo "  --frangi-sigma-step $FRANGI_SIGMA_STEP  --frangi-alpha $FRANGI_ALPHA"
+    echo "  --frangi-beta $FRANGI_BETA  --frangi-gamma $FRANGI_GAMMA"
 }
 
 # Parse named arguments
@@ -40,6 +46,7 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         --input-dir) INPUT_DIR="$2"; shift ;;
         --output-dir) OUTPUT_DIR_BASE="$2"; shift ;;
+        --write-vcps) WRITE_VCPS=true ;; 
         --help) print_help; exit 0 ;;
         *) echo "Unknown parameter: $1"; print_help; exit 1 ;;
     esac
@@ -56,6 +63,9 @@ fi
 
 # Ensure base output folder exists
 mkdir -p "$OUTPUT_DIR_BASE"
+
+# Record global start time
+global_start_time=$(date +%s)
 
 # Iterate over each volpkg
 for volpkg_path in "$INPUT_DIR"/*.volpkg; do
@@ -75,32 +85,37 @@ for volpkg_path in "$INPUT_DIR"/*.volpkg; do
             continue
         fi
 
-        # Prepare output folder
         OUTPUT_DIR="$OUTPUT_DIR_BASE/${volpkg_name}_${volume_id}"
         mkdir -p "$OUTPUT_DIR"
 
-        # Track execution time
         start_time=$(date +%s)
 
-        python3 segmentation/scripts/ced_vcps_nx_dijkstra.py \
-            --volpkg "$volpkg_path" \
-            --volume "$volume_id" \
-            --slice-name "$SLICE_NAME" \
-            -t "$THRESHOLD" \
-            -k "$NUM_CLUSTERS" \
-            -n "$NUM_SEG_POINTS" \
-            -s "$TOTAL_SEG_POINTS" \
-            -o "$OUTPUT_DIR" \
-            --gaussian-kernel "$GAUSSIAN_KERNEL" \
-            --intensity-alpha "$INTENSITY_ALPHA" \
-            --mask-thickness "$MASK_THICKNESS" \
-            --frangi-sigma-min "$FRANGI_SIGMA_MIN" \
-            --frangi-sigma-max "$FRANGI_SIGMA_MAX" \
-            --frangi-sigma-step "$FRANGI_SIGMA_STEP" \
-            --frangi-alpha "$FRANGI_ALPHA" \
-            --frangi-beta "$FRANGI_BETA" \
+        CMD=(python3 segmentation/scripts/ced_vcps_nx_dijkstra.py
+            --volpkg "$volpkg_path"
+            --volume "$volume_id"
+            --slice-name "$SLICE_NAME"
+            -t "$THRESHOLD"
+            -k "$NUM_CLUSTERS"
+            -n "$NUM_SEG_POINTS"
+            -s "$TOTAL_SEG_POINTS"
+            -o "$OUTPUT_DIR"
+            --gaussian-kernel "$GAUSSIAN_KERNEL"
+            --intensity-alpha "$INTENSITY_ALPHA"
+            --mask-thickness "$MASK_THICKNESS"
+            --frangi-sigma-min "$FRANGI_SIGMA_MIN"
+            --frangi-sigma-max "$FRANGI_SIGMA_MAX"
+            --frangi-sigma-step "$FRANGI_SIGMA_STEP"
+            --frangi-alpha "$FRANGI_ALPHA"
+            --frangi-beta "$FRANGI_BETA"
             --frangi-gamma "$FRANGI_GAMMA"
+        )
 
+        if [ "$WRITE_VCPS" = true ]; then
+            CMD+=(--write-vcps)
+        fi
+
+        echo "▶️  Running: ${CMD[@]}"
+        "${CMD[@]}"
 
         end_time=$(date +%s)
         duration=$((end_time - start_time))
@@ -108,3 +123,9 @@ for volpkg_path in "$INPUT_DIR"/*.volpkg; do
         echo ""
     fi
 done
+
+# Global end time
+global_end_time=$(date +%s)
+total_time=$((global_end_time - global_start_time))
+
+echo "🎯 All processing complete in $total_time seconds."

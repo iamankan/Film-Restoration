@@ -180,7 +180,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     center_point = (cy//2, cx//2)
 
-    clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
+    # clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
 
     clustered_frangi = frangi(clustered, 
                               sigmas=range(frangi_sigma_min,frangi_sigma_max,frangi_sigma_step),
@@ -196,7 +196,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     clustered_frangi = clustered_frangi*255 # This is float
     clustered_frangi = clustered_frangi.astype(np.uint8) # Convert type to int.
 
-    print(f'Type gaussian: {clustered_gaussian.dtype}. Type frangi: {clustered_frangi.dtype}')
+    # print(f'Type gaussian: {clustered_gaussian.dtype}. Type frangi: {clustered_frangi.dtype}')
 
     print(f'Frangi: min: {clustered_frangi.min()}, max: {clustered_frangi.max()}')
 
@@ -230,7 +230,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
         cv2.imwrite(f'{save_at_cluster}/skeleton_{gaussian_kernel}.jpg', skeleton)
         cv2.imwrite(f'{save_at_cluster}/binary_{gaussian_kernel}.jpg', binary)
-        cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
+        # cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
         cv2.imwrite(f'{save_at_cluster}/frangi.jpg', clustered_frangi)
     
 
