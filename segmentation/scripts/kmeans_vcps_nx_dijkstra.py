@@ -9,7 +9,7 @@ import matplotlib
 from scipy.ndimage import convolve
 import networkx as ntx
 from scipy.spatial.distance import euclidean
-matplotlib.use('TkAgg')
+# matplotlib.use('TkAgg')
 from collections import deque
 import heapq
 from math import sqrt 

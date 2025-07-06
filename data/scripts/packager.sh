@@ -54,9 +54,14 @@ fi
 for ID_DIR in "$RECON_DIR"/*; do
     if [ -d "$ID_DIR" ]; then
         ID=$(basename "$ID_DIR")
-        LOG_PATH="$RECON_DIR/$ID/${ID}_IBW_10um_60kV_MS_Rec_ROI/${ID}_IBW_10um_60kV_MS__rec.log"
-        VOLPKG_PATH="$VOLPKG_DIR/${ID}_IBW_10um_60kV_MS.volpkg"
-        NAME="${ID}_IBW_10um_60kV_MS"
+        LOG_PATH="$RECON_DIR/$ID/IBW_${ID}_10um_60kV_Rec_ROI/IBW_${ID}_10um_60kV__rec.log"
+        VOLPKG_PATH="$VOLPKG_DIR/IBW_${ID}_10um_60kV.volpkg"
+        NAME="IBW_${ID}_10um_60kV"
+
+        # echo "Log file name for $ID is $LOG_PATH"
+
+        # ls "$RECON_DIR/${ID}/IBW_${ID}_10um_60kV_Rec_ROI/IBW_${ID}_10um_60kV__rec.log"
+
 
         if [ -f "$LOG_PATH" ]; then
             echo "Processing $ID..."
