@@ -153,9 +153,13 @@ def dijkstra_cheapest_path_nx(G, start, end):
 python3 segmentation/scripts/kmeans.py -s /media/ankan/Ankan_PhD/MoMA/VolPkgs/W26855.volpkg/volumes/20250214115505/1000.tif -k 3 -n 100
 '''
 
-def select_n_points(pointset, required_number):
+def select_n_points(pointset, required_number, trim_val=0):
     step = (len(pointset) - 1) / (required_number - 1)
-    return [pointset[int(round(i * step))] for i in range(required_number)]
+    if trim_val and trim_val<int(0.1*required_number): # number of trim points have to be atmost 10% of the required points
+        print(f'Trimming {trim_val} points from the ends')
+        return [pointset[int(round(i * step))] for i in range(required_number)][trim_val:-trim_val]
+    else:
+        return [pointset[int(round(i * step))] for i in range(required_number)]
 
 
 def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.array, clustered: np.array, save_at: str, cluster_id: int, 
@@ -164,7 +168,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
          txt_coord: bool=False, write_vcps: bool=False,
          frangi_sigma_min:int=6, frangi_sigma_max:int=12,
            frangi_sigma_step:int=1, frangi_black_ridges:bool=False, 
-           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15):
+           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
@@ -300,12 +304,13 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                 cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
                            mask_thickness)
             # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
-            shortestpath = select_n_points(shortestpath, total_seg_points)
+            shortestpath = select_n_points(shortestpath, total_seg_points, trim_val)
             # print(f'Now the total points are {len(shortestpath)}')
         
 
 
         pointset = [[]]
+        slice_name = film_slice.stem
         slice_no = int(film_slice.stem)
         if save_at and txt_coord:
             with open(f'{save_at_cluster}/segmented_component_{idx}_cluster{cluster_id}.txt', 'w') as f:
@@ -322,10 +327,11 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                 cv2.circle(colored_path, (sp[1], sp[0]), 2, (0,int(255*(1-(spidx/len(shortestpath)))),int(255*spidx/len(shortestpath))),2)
                 pointset[0].append([float(sp[1]), float(sp[0]), float(slice_no)])
         # print(f'Length of pointset[0]: {len(pointset[0])}')
+        ps_len = len(pointset[0])
         
         if len(pointset[0])>0:
             pointset = np.array(pointset)
-            seg_id = f'{get_date()}_kmeans_thin_frangi_dijkstra_k_{gaussian_kernel}'
+            seg_id = f'{get_date()}_kmeans_thin_frangi_dijkstra_P{ps_len}_S{slice_name}_a_{frangi_alpha}_b_{frangi_beta}_g_{frangi_gamma}'
             if write_vcps:
                 seg_path = volpkg_dir / f'paths/{seg_id}'
                 seg_path.mkdir(exist_ok=True, parents=True)
@@ -363,7 +369,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
            intensity_alpha: float=1, mask_thickness: int=2, txt_coord: bool=False, write_vcps: bool=False,
            frangi_sigma_min:int=6, frangi_sigma_max:int=12,
            frangi_sigma_step:int=1, frangi_black_ridges:bool=False, 
-           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15):
+           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -419,7 +425,8 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
              intensity_alpha=intensity_alpha, mask_thickness=mask_thickness, txt_coord=txt_coord, write_vcps=write_vcps,
              frangi_sigma_min=frangi_sigma_min, frangi_sigma_max=frangi_sigma_max,
            frangi_sigma_step=frangi_sigma_step, frangi_black_ridges=frangi_black_ridges, 
-           frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma)
+           frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma,
+           trim_val=trim_val)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -444,14 +451,17 @@ def main():
     parser.add_argument('--txt-coord', help="Use this flag to turn on writing coors to a txt file. (Turned OFF by default.)", action='store_true')
     parser.add_argument('--mask-thickness', help="Thickness of the binary mask to be drawn", type=int, default=2)
 
-    parser.add_argument('--frangi-sigma-min', help="Enter the minimum sigma for frangi/CED filtering.", type=int, default=6)
-    parser.add_argument('--frangi-sigma-max', help="Enter the maximum sigma for frangi/CED filtering.", type=int, default=12)
-    parser.add_argument('--frangi-sigma-step', help="Enter the step for frangi/CED filtering by which sigma should increase.", type=int, default=4)
+    parser.add_argument('--frangi-sigma-min', help="Enter the minimum sigma for frangi filtering.", type=int, default=6)
+    parser.add_argument('--frangi-sigma-max', help="Enter the maximum sigma for frangi filtering.", type=int, default=12)
+    parser.add_argument('--frangi-sigma-step', help="Enter the step for frangi filtering by which sigma should increase.", type=int, default=4)
     parser.add_argument('--frangi-black-ridges', help="Use this flag if black ridges are considered. It is only necessary if spockets are present.", 
                         action='store_true')
-    parser.add_argument('--frangi-alpha', help="Enter alpha value for frangi/CED.", type=float, default=0.5)
-    parser.add_argument('--frangi-beta', help="Enter beta value for frangi/CED.", type=float, default=0.5)
-    parser.add_argument('--frangi-gamma', help="Enter gamma value for frangi/CED.", type=float, default=15)
+    parser.add_argument('--frangi-alpha', help="Enter alpha value for frangi.", type=float, default=0.5)
+    parser.add_argument('--frangi-beta', help="Enter beta value for frangi.", type=float, default=0.5)
+    parser.add_argument('--frangi-gamma', help="Enter gamma value for frangi.", type=float, default=15)
+
+    parser.add_argument('--trim-val', help="Enter the number of points you want to trim from the final segmentation, \
+                        such that you don't encounter any bad meshing.", type=int, default=0)
 
 
     parser.add_argument('--write-vcps',help="Enter to write vcps.", action='store_true')
@@ -476,6 +486,7 @@ def main():
     mask_thickness = args.mask_thickness
     txt_coord = args.txt_coord
     write_vcps = args.write_vcps
+    trim_val = args.trim_val
 
     frangi_sigma_min = args.frangi_sigma_min
     frangi_sigma_max = args.frangi_sigma_max
@@ -514,7 +525,8 @@ def main():
            intensity_alpha=intensity_alpha, gaussian_kernel=gaussian_kernel, mask_thickness=mask_thickness, txt_coord=txt_coord,
            write_vcps=write_vcps, frangi_sigma_min=frangi_sigma_min, frangi_sigma_max=frangi_sigma_max,
            frangi_sigma_step=frangi_sigma_step, frangi_black_ridges=frangi_black_ridges, 
-           frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma)
+           frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma,
+           trim_val=trim_val)
 
 
 if __name__ == "__main__":

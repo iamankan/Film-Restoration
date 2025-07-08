@@ -5,7 +5,7 @@ THRESHOLD=2
 NUM_CLUSTERS=1
 NUM_SEG_POINTS=1000
 TOTAL_SEG_POINTS=500
-GAUSSIAN_KERNEL=1
+GAUSSIAN_KERNEL=3
 INTENSITY_ALPHA=5
 MASK_THICKNESS=2
 SLICE_NAME="0000.tif"
@@ -87,12 +87,12 @@ for volpkg_path in "$INPUT_DIR"/*.volpkg; do
             continue
         fi
 
-        OUTPUT_DIR="$OUTPUT_DIR_BASE/${volpkg_name}_${volume_id}_frangi_a${FRANGI_ALPHA}_b${FRANGI_BETA}_g${FRANGI_GAMMA}"
+        OUTPUT_DIR="$OUTPUT_DIR_BASE/${volpkg_name}_${volume_id}_frangi_on_gaussian_${GAUSSIAN_KERNEL}_a${FRANGI_ALPHA}_b${FRANGI_BETA}_g${FRANGI_GAMMA}"
         mkdir -p "$OUTPUT_DIR"
 
         start_time=$(date +%s)
 
-        CMD=(python3 segmentation/scripts/frangi_vcps_nx_dijkstra.py
+        CMD=(python3 segmentation/scripts/frangi_gaussian_vcps_nx_dijkstra.py
             --volpkg "$volpkg_path"
             --volume "$volume_id"
             --slice-name "$SLICE_NAME"
