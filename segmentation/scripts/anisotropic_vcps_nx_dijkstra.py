@@ -1,5 +1,6 @@
 import argparse
 import cv2
+import itk.itkAnisotropicDiffusionImageFilterPython
 import numpy as np
 from pathlib import Path
 import imageio.v3 as iio
@@ -186,6 +187,16 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     center_point = (cy//2, cx//2)
 
     # clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
+    # Convert grayscale to 3-channel color (BGR)
+    clustered_3ch = cv2.cvtColor(clustered, cv2.COLOR_GRAY2BGR)
+
+    # Apply anisotropic diffusion
+    clustered_ced = cv2.ximgproc.anisotropicDiffusion(
+        clustered_3ch, alpha=0.1, K=20, niters=50
+    )
+
+    # If needed, convert back to grayscale
+    clustered_ced_gray = cv2.cvtColor(clustered_ced, cv2.COLOR_BGR2GRAY)
 
     clustered_frangi = frangi(clustered, 
                               sigmas=range(frangi_sigma_min,frangi_sigma_max,frangi_sigma_step),
@@ -195,7 +206,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                               black_ridges=frangi_black_ridges # films are bright
                               ) # gets 0-1
     
-
+    
     
 
     print(f'First: Frangi: min: {clustered_frangi.min()}, max: {clustered_frangi.max()}')
@@ -205,10 +216,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     # print(f'Type gaussian: {clustered_gaussian.dtype}. Type frangi: {clustered_frangi.dtype}')
 
-    frangi_min = clustered_frangi.min()
-    frangi_max = clustered_frangi.max()
-
-    print(f'Frangi: min: {frangi_min}, max: {frangi_max}')
+    print(f'Frangi: min: {clustered_frangi.min()}, max: {clustered_frangi.max()}')
 
     print("Frangi filter parameters (inside thin):")
     print(f"  sigma_min      : {frangi_sigma_min}")
@@ -222,7 +230,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     # print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
     
     # _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
-    _, binary = cv2.threshold(clustered_frangi, (frangi_max - frangi_min) // threshold_factor, frangi_max, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(clustered_ced_gray, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     
     skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_GUOHALL)
 
@@ -242,6 +250,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/binary_{gaussian_kernel}.jpg', binary)
         # cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
         cv2.imwrite(f'{save_at_cluster}/frangi.jpg', clustered_frangi)
+        cv2.imwrite(f'{save_at_cluster}/anisotropic.jpg', clustered_ced_gray)
     
 
     for idx in range(1, num_labels):  # skip background

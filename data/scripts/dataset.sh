@@ -2,7 +2,7 @@
 
 
 show_help() {
-    echo "Usage: $0 --volpkg PATH TO VOLPKG --config PATH TO CONFIG FILE --output OUTPUT PATH"
+    echo "Usage: $0 --volpkg PATH TO VOLPKG --config PATH TO CONFIG FILE --output OUTPUT PATH --optical PATH TO OPTICAL IMAGE"
     echo "Description:"
     echo "  This script help make the IBW dataset from the optical image and the volpkg with its segmented outputs"
     echo

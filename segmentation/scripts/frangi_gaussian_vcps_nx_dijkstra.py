@@ -203,7 +203,11 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     # print(f'Type gaussian: {clustered_gaussian.dtype}. Type frangi: {clustered_frangi.dtype}')
 
-    print(f'Frangi: min: {clustered_frangi.min()}, max: {clustered_frangi.max()}')
+    frangi_min = clustered_frangi.min()
+    frangi_max = clustered_frangi.max()
+
+    print(f'Frangi: min: {frangi_min}, max: {frangi_max}')
+
 
     print("Frangi filter parameters (inside thin):")
     print(f"  sigma_min      : {frangi_sigma_min}")
@@ -217,9 +221,10 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     # print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
     
     # _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
-    _, binary = cv2.threshold(clustered_frangi, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(clustered_frangi, (frangi_max - frangi_min) // threshold_factor, frangi_max, cv2.THRESH_BINARY)
     
-    skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_GUOHALL)
+    # skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_GUOHALL)
+    skeleton = cv2.ximgproc.thinning(binary)
 
     binary_segmentation_mask = np.zeros_like(original_image[:, :, 0])
         
@@ -256,12 +261,12 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         if len(deg_1) == 0:
             junc = find_graph_junctions(G=graph)
             if len(junc) == 0 or len(junc) < 2:
-                return
+                break
             endpoints = junc
         elif len(deg_1) < 2:
             junc = find_graph_junctions(G=graph)
             if len(junc) ==0:
-                return
+                break
             endpoints = junc+deg_1
         else:
             endpoints=deg_1
@@ -332,7 +337,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         
         if len(pointset[0])>0:
             pointset = np.array(pointset)
-            seg_id = f'{get_date()}_kmeans_thin_frangi_gaussian_dijkstraP{ps_len}_S{slice_name}_k_{gaussian_kernel}_a_{frangi_alpha}_b_{frangi_beta}_g_{frangi_gamma}'
+            seg_id = f'{get_date()}_kmeans_thin_frangi_gaussian_dijkstra_P{ps_len}_S{slice_name}_k_{gaussian_kernel}_a_{frangi_alpha}_b_{frangi_beta}_g_{frangi_gamma}'
             if write_vcps:
                 seg_path = volpkg_dir / f'paths/{seg_id}'
                 seg_path.mkdir(exist_ok=True, parents=True)
@@ -350,11 +355,14 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         if cv_show:
             cv2.imshow(f"Cluster {cluster_id} | Component {idx} - Skeleton Overlay", color_overlay)
             cv2.waitKey(cv_wait_key_val)
+        
+        print(f'Value of save-at: {save_at} and length of pointset: {len(pointset[0])}')
 
         if save_at:
             if len(pointset[0])>0:
                 cv2.imwrite(f'{save_at_cluster}/segmented_{seg_id}_component_{idx}_cluster{cluster_id}.jpg', img=color_overlay)
     
+    print(f'==================>Final save_at: {save_at}')
     if save_at:
         print(f"Writing binary and total segmentation colored files for cluster {cluster_id}.")
         # cv2.imwrite(f'{save_at_cluster}/binary_cluster{cluster_id}.jpg', img=binary)
