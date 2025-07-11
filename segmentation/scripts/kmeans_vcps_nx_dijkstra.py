@@ -172,9 +172,12 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
 
+    gaussian_min = clustered_gaussian.min()
+    gaussian_max = clustered_gaussian.max()
+
     # print(f"Performing thresholding on blurred clustered masked image. GaussianBlur is used with kernel ({gaussian_kernel}, {gaussian_kernel})")
     
-    _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(clustered_gaussian, (gaussian_max - gaussian_min) // threshold_factor, gaussian_max, cv2.THRESH_BINARY)
     
     skeleton = cv2.ximgproc.thinning(binary)
 
