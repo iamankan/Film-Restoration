@@ -10,8 +10,8 @@ def simulate_photographic_response(C, V, output, A=1.0, k=1.0, supertitle="Super
     
     C_flat = C.flatten()
     V_flat = V.flatten()
-
-    plt.figure(figsize=(20, 5)) # width, height
+    
+    plt.figure(figsize=(40, 5)) # width, height
 
     plt.subplot(1, 3, 1)
     plt.imshow(C, cmap='gray')
@@ -35,6 +35,7 @@ def simulate_photographic_response(C, V, output, A=1.0, k=1.0, supertitle="Super
     plt.title("CT vs Visible Image")
 
 
+
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
     plt.suptitle(supertitle, fontsize=16)
@@ -56,10 +57,8 @@ def make_dh(input_ct, input_optical, A, k, output, supertitle="Super title"):
     optical_min, optical_max = optical_iinfo.min, optical_iinfo.max
 
     ct_norm_g = (input_ct - ct_min) / (ct_max - ct_min)
-    # ct_norm_g = ct_norm_g.astype(np.float32)
     ct_norm_l = (input_ct - input_ct.min()) / (input_ct.max() - input_ct.min())
     optical_norm_g = (input_optical - optical_min) / (optical_max - optical_min)
-    # optical_norm_g = optical_norm_g.astype(np.float32)
     optical_norm_l = (input_optical - input_optical.min()) / (input_optical.max() - input_optical.min())
 
     print(f'Normalised(g). CT min, max: ({ct_norm_g.min(), ct_norm_g.max()}), Optical min, max: ({optical_norm_g.min(), optical_norm_g.max()})')
@@ -67,9 +66,7 @@ def make_dh(input_ct, input_optical, A, k, output, supertitle="Super title"):
 
     simulate_photographic_response(C=ct_norm_g, V=optical_norm_g, A=A, k=k, output=f'{output}/ct_visible_global.png', supertitle=supertitle)
     simulate_photographic_response(C=ct_norm_l, V=optical_norm_l, A=A, k=k, output=f'{output}/ct_visible_local.png', supertitle=supertitle)
-
-
-
+    
 
 
 def main():
