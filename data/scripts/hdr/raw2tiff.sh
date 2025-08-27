@@ -97,7 +97,8 @@ for file in "${FILES[@]}"; do
 
     # Run dcraw and save as new filename
     echo "Processing $file → $newfile"
-    dcraw -4 -D -d -T -c "$file" > "$newfile"
+    dcraw -4 -D -d -T -j -c "$file" > "$newfile" # No Debayering
+    # dcraw -4 -T -d -c "$file" > "$newfile"
     exiftool -TagsFromFile "$file" "$newfile" -overwrite_original
     echo "Processing $file → $newfile (metadata copied)"
 
