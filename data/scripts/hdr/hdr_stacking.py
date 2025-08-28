@@ -61,10 +61,12 @@ def main():
 
     hdr_merge = hdr(img_list=images, exposure_times=exposure_times)
     print(hdr_merge.shape, hdr_merge.dtype, hdr_merge.min(), hdr_merge.max())
-    hdr_norm = (hdr_merge - hdr_merge.min())/(hdr_merge.max() - hdr_merge.min())
+    hdr_norm = 1-((hdr_merge - hdr_merge.min())/(hdr_merge.max() - hdr_merge.min()))
     hdr_16bit = (hdr_norm*np.iinfo(np.uint16).max).astype(np.uint16)
     hdr_8bit = (hdr_norm*np.iinfo(np.uint8).max).astype(np.uint8)
     iio.imwrite(f'{output_dir}/hdr.tiff', hdr_merge)
+    iio.imwrite(f'{output_dir}/hdr_8bit.tiff', hdr_8bit)
+    iio.imwrite(f'{output_dir}/hdr_16bit.tiff', hdr_16bit)
 
     # Debayering
     hdr_debayered_16 = cv.cvtColor(hdr_16bit, cv.COLOR_BayerRGGB2GRAY)
