@@ -70,35 +70,26 @@ if [ ${#FILES[@]} -eq 0 ]; then
 fi
 
 for file in "${FILES[@]}"; do
-    # Read exposure difference using exiftool (value only)
-    expdiff=$(exiftool -s3 -ExposureDifference "$file")
-
-    # Make it filename-safe
-    if [[ "$expdiff" == "0" ]]; then
-    	expdiff_safe="p0"
-    else
-	# Replace characters
-	expdiff_safe=${expdiff//\//p}    # replace /
-	expdiff_safe=${expdiff_safe//+/p} # replace +
-	expdiff_safe=${expdiff_safe// /_} # replace spaces
-	expdiff_safe=${expdiff_safe//-/m} # replace - with m
-    fi
 
     # Base filename without extension
+    filename="${file%.*}"
     if [ -n "$NEWNAME" ]; then
         base="$NEWNAME"
     else
-        base="${file%.*}"
+        # base="${file%.*}"
+        base="test"
     fi
+    echo "base: ${base}"
 
     # New filename for TIFF output
     # newfile="${base}_expdiff${expdiff_safe}.tiff"
-    newfile="${OUTPUT_DIR}/${base}_expdiff${expdiff_safe}.tiff"
+    newfile="${OUTPUT_DIR}/${base}_${filename}.tiff"
+
 
     # Run dcraw and save as new filename
     echo "Processing $file → $newfile"
-    dcraw -4 -D -d -T -j -c "$file" > "$newfile" # No Debayering
-    # dcraw -4 -T -d -c "$file" > "$newfile"
+    # dcraw -4 -D -d -T -j -c "$file" > "$newfile" # No Debayering
+    dcraw -4 -q 0 -T -c "$file" > "$newfile" # Debayering
     exiftool -TagsFromFile "$file" "$newfile" -overwrite_original
     echo "Processing $file → $newfile (metadata copied)"
 
