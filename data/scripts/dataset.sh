@@ -117,6 +117,7 @@ tail -n +2 "$config" | while IFS=',' read -r ID Volpkg Volume Segmentation Trans
 
   # Copying the optical image
   echo "Copying the optical image"
-  cp $optical_dir/$frame_id.jpg $match_dir/"$frame_id".jpg
+  # cp $optical_dir/$frame_id.jpg $match_dir/"$frame_id".jpg
+  cp "$optical_dir/$frame_id"* "$match_dir/"
 
 done
