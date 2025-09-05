@@ -1,3 +1,4 @@
 opencv-python
 PyExifTool
 imageio
+educelab-imgproc
