@@ -28,4 +28,25 @@ while [[ "$#" -gt 0 ]]; do
     esac
 done
 
-/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/optical/${ID}.jpg -f /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/xray_render/edited/tif/${ID}_render.tif -o /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/registered/${ID}_reg.tif
+# /Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/optical/${ID}.jpg -f /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/xray_render/edited/tif/${ID}_render.tif -o /Volumes/Ankan_PhD/IlFord/EduceMount/Xometry_MJF_VP/FrameAvg/registered/${ID}_reg.tif
+
+
+# echo /Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register -m /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive.tiff -f /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/render/${ID}_max.tif -o /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive_registered.tiff
+
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register \
+-m /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive.png \
+-f /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/render/${ID}_max.tif \
+-o /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive_registered.png \
+--output-ldm /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive_ldm.ldm
+
+/Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register \
+-m /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive.tiff \
+-f /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/render/${ID}_max.tif \
+-o /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive_registered.tiff \
+-l /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/${ID}/match/${ID}_hdr_positive_ldm.ldm
+
+
+# /Volumes/Working_4TB/utils/registration-toolkit/build/bin/rt_register \
+# -m /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/013/match/013_hdr_positive.tiff \
+# -f /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset/IBW_no_seam/013/render/013_max.tif \
+# -o /Volumes/Working_4TB/IBW_no_Seam/no_seam_dataset_win_2/013/match/013_hdr_positive_registered.tiff
