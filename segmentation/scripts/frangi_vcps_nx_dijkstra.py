@@ -20,8 +20,6 @@ import json
 import datetime as dt
 import networkx as nx
 from skimage.filters import frangi
-import itk
-
 
 # From quicksegment https://github.com/educelab/quick-segment/blob/develop/qs/data/vcps.py
 def get_date():
