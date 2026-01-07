@@ -5,12 +5,13 @@ import numpy as np
 from sklearn.decomposition import PCA
 from einops import rearrange
 from natsort import natsorted
+import joblib
 
 import logging
 logger = logging.getLogger(__name__)
 
-def __pca__(input: Path, output: Path) -> None:
-    logger.info("PCA started!")
+def __pca__(input: Path, output: Path, pca_path: Path=None) -> None:
+    logger.info(f"PCA started!")
 
     images = natsorted([i for i in input.iterdir()])
     logger.debug(images)
@@ -25,8 +26,20 @@ def __pca__(input: Path, output: Path) -> None:
     np_images_flatten = rearrange(np_images, 'c h w -> (h w) c')  # shape: (n, h*w)
 
     # Step 4: PCA
-    pca = PCA(n_components=n)
-    pca_transform = pca.fit_transform(np_images_flatten)
+    if pca_path: # If not NONE, then either load/save+transform
+        if pca_path.exists():
+            logger.info(f'Loading PCA from {pca_path}')
+            pca = joblib.load(pca_path)
+            pca_transform = pca.transform(np_images_flatten)
+        else:
+            pca = PCA(n_components=n)
+            pca.fit(np_images_flatten)
+            logger.info(f'Saving pca to {pca_path}')
+            joblib.dump(pca, f'{pca_path}')
+            pca_transform = pca.transform(np_images_flatten)
+    else: # If NONE then 
+        pca = PCA(n_components=n)
+        pca_transform = pca.fit_transform(np_images_flatten)
 
     pca_transform = rearrange(pca_transform, '(h w) c -> c h w', c=n, h=h, w=w)
 
@@ -49,14 +62,23 @@ def main():
     parser.add_argument(
         '-d', '--debug',
         help="Print lots of debugging statements",
-        action="store_const", dest="loglevel", const=logging.DEBUG
+        action="store_const",
+        dest="loglevel",
+        const=logging.DEBUG,
+        default=logging.INFO,
     )
+    parser.add_argument('-p', '--pca-path', help='Save the trained pca.', type=Path)
     # parser.add_argument('-n','--number-of-components', help='Number of principle components required. If not provided, it will take the number of images by default.', required=False, type=int)
     args = parser.parse_args()
+    logging.basicConfig(
+        level=args.loglevel,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
     input = args.input
     output = args.output
+    pca_path = args.pca_path
     # num = args.number_of_components
-    __pca__(input=input, output=output)
+    __pca__(input=input, output=output, pca_path=pca_path)
 
 
 
