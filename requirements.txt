@@ -5,3 +5,8 @@ opencv-contrib-python
 networkx
 scikit-learn
 scikit-image
+itk
+natsort
+pyvista
+pandas
+trimesh

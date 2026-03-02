@@ -293,6 +293,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
             uvs.append((u,v))
         expensive_idx = np.argmax(np.array([costs]))
         shortestpath = paths[expensive_idx]
+        print(f'Paths: {len(paths)}. Costs: {costs}, {len(costs)}. UVs: {uvs}, {len(uvs)}')
         shortestdist = costs[expensive_idx]
         start, end = uvs[expensive_idx][0], uvs[expensive_idx][1]
 
@@ -311,7 +312,9 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
                            mask_thickness)
             # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
             shortestpath = select_n_points(shortestpath, total_seg_points, trim_val)
+            # print(f'After selecting {total_seg_points} points, the total points are {len(shortestpath)} and shortest path is {shortestpath[0]}')
             # print(f'Now the total points are {len(shortestpath)}')
+            
         
 
 

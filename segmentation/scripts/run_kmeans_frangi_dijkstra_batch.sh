@@ -8,7 +8,7 @@ TOTAL_SEG_POINTS=500
 GAUSSIAN_KERNEL=1
 INTENSITY_ALPHA=5
 MASK_THICKNESS=2
-SLICE_NAME="0000.tif"
+SLICE_NAME="1000.tif"
 
 FRANGI_SIGMA_MIN=4
 FRANGI_SIGMA_MAX=14
@@ -48,7 +48,7 @@ while [[ "$#" -gt 0 ]]; do
     case $1 in
         --input-dir) INPUT_DIR="$2"; shift ;;
         --output-dir) OUTPUT_DIR_BASE="$2"; shift ;;
-        --write-vcps) WRITE_VCPS=true ;; 
+        --write-vcps) WRITE_VCPS=true ;;
         --help) print_help; exit 0 ;;
         *) echo "Unknown parameter: $1"; print_help; exit 1 ;;
     esac
