@@ -20,7 +20,10 @@ from scipy.interpolate import interp1d
 import cv2
 
 from scipy.spatial import KDTree
+import pickle
 
+from scipy.spatial import distance_matrix
+from itertools import groupby
 
 
 def thin_and_display_mask(mask_path: Path):
@@ -198,39 +201,176 @@ def parse_arguments():
 
 def read_coordinates(coord_file, z_value):
     coordinates = []
+    pen = 0
     with open(coord_file, 'r') as f:
         next(f)
         for line in f:
             coords = tuple(map(float, line.strip().split(',')))
-            coordinates.append((coords[0], coords[1], float(z_value)))
+            coordinates.append((coords[0], coords[1], float(z_value), pen))
+            pen = 1
 
     return coordinates
 
+def calculate_euclidian_distance(x1, y1, x2, y2):
+    return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+
+def decide_winding(s1, s2, e1, e2):
+    winding_needed = False
+    s1s2 = calculate_euclidian_distance(s1[0], s1[1], s2[0], s2[1])
+    s1e2 = calculate_euclidian_distance(s1[0], s1[1], e2[0], e2[1])
+    e1s2 = calculate_euclidian_distance(e1[0], e1[1], s2[0], s2[1])
+    e1e2 = calculate_euclidian_distance(e1[0], e1[1], e2[0], e2[1])
+    min_dist = min(s1s2, s1e2, e1s2, e1e2)
+    print(f"s1s2: {s1s2}, s1e2: {s1e2}, e1s2: {e1s2}, e1e2: {e1e2}, min_dist: {min_dist}")
+    if min_dist == s1s2 or min_dist == e1e2:
+        winding_needed = True
+    return winding_needed
+
+
+def build_automata_sequence(successor_map, total_nodes):
+    """
+    Builds a deterministic sequence from a transition table (successor_map).
+    
+    Args:
+        successor_map (dict): e.g., {0: 1, 1: 2}
+        total_nodes (int): Total number of segments in the forest
+    """
+    # 1. Find the Start State (q0)
+    # The start is a node that is a 'Key' but never a 'Value'
+    all_keys = set(successor_map.keys())
+    all_values = set(successor_map.values())
+    
+    # Potential starts are nodes that no one points to
+    start_candidates = list(all_keys - all_values)
+    
+    # If it's a perfect chain, there's 1 candidate. 
+    # If it's a loop, we default to the first available key.
+    start_node = start_candidates[0] if start_candidates else next(iter(all_keys))
+    
+    # 2. Execute the Automaton
+    sequence = [start_node]
+    visited = {start_node}
+    
+    # While the current state has a transition defined
+    while sequence[-1] in successor_map:
+        next_state = successor_map[sequence[-1]]
+        
+        # Safety: check for infinite loops (cycles)
+        if next_state in visited:
+            print(f"Loop detected at {next_state}. Terminating sequence.")
+            break
+            
+        sequence.append(next_state)
+        visited.add(next_state)
+        
+    return sequence
+
+
+def correct_for_winding(segment_list):
+    print(f'Segment list length before winding correction: {len(segment_list)}')
+    n = len(segment_list)
+    if n == 1 : return segment_list
+    for i in range(n - 1):
+        seg1 = segment_list[i]
+        seg2 = segment_list[i + 1]
+        # print(f'i: {i}')
+        s1 = np.array(seg1[0])
+        e1 = np.array(seg1[-1])
+        s2 = np.array(seg2[0])
+        e2 = np.array(seg2[-1])
+        print(f's1: {s1}, e1: {e1}, s2: {s2}, e2: {e2}')
+        if decide_winding(s1, s2, e1, e2):
+            segment_list[i + 1] = segment_list[i+1][::-1]
+            print(f"Winding correction applied between segments {i+1} according to {i}")
+    M = np.full((n,  n), np.inf)
+
+    for i in range(n): # Start
+        for j in range(n): # End
+            if i == j: continue
+            start = segment_list[i][0]
+            end = segment_list[j][-1]
+            M[i][j] = calculate_euclidian_distance(start[0], start[1], end[0], end[1])
+    print(f'M: {M}')
+    # Get the top n-1 distances
+    dist_list_idx = np.argsort(M, axis=None)
+    row, col = np.unravel_index(dist_list_idx, M.shape)
+    r, c = row[:n-1],col[:n-1]
+    # print(r, c)
+    final_idx = []
+    successor = {}
+    for i, j in zip(r,c):
+        final_idx.append(int(j))
+        final_idx.append(int(i))
+        print(f's{j}[e{j}s{i}]e{i}')
+        successor[int(j)] = int(i) # Successor of j is i. It means ej->si is a rule.
+    print(f'Successor:\n{successor}')
+    automata_sequence = build_automata_sequence(successor_map=successor, total_nodes=n)
+    print(f'Sequence from automata: {automata_sequence}')
+    # print(final_idx)
+    # final_list = [i for i,_ in groupby(final_idx)]
+    # print(f"final order list idx: {final_list}")
+    # print(f'final_list: {final_list}')
+    tmp = []
+    for i in automata_sequence:
+        tmp.append(segment_list[i])
+    return tmp
+
+
+
 
 def pre_process_files(input_dir, slice_img_dir, slice_coord_dir, slice_mask_dir):
-    for slice in input_dir.iterdir():
+    all_segs = {'slices': {}}
+    for it, slice in enumerate(natsorted(input_dir.iterdir())):
+        # if it > 20: break
         print(f"Processing slice: {slice.name}")
         vol_id = slice.name.split('_')[0]
         print(f"Extracted volume ID: {vol_id}")
         z_value = slice.name.split('_')[-1].split('.')[0]
         print(f"Extracted z-value: {z_value}")
+        all_segs['slices'][str(z_value)] = []
         segmentation_instance = [i for i in slice.iterdir() if i.is_dir()]
         cluster_instance = [i for i in segmentation_instance[0].iterdir() if i.is_dir()]
-        coordinate_instance = [i for i in cluster_instance[0].glob('*.txt')]
+        coordinate_instance = [i for i in natsorted(cluster_instance[0].glob('*.txt'))]
         print(f"Found {len(coordinate_instance)} coordinate files for z-value {z_value}.")
         coordinates = []
+        tmp = []
         for coord_file in coordinate_instance:
-            coordinates.extend(read_coordinates(coord_file, z_value))
+            coord_list = read_coordinates(coord_file, z_value)
+            tmp.append([t[:2] for t in coord_list])
+            coordinates.extend(coord_list)
+        tmp = correct_for_winding(tmp)
+        all_segs['slices'][str(z_value)] = tmp
         print(f"Read {len(coordinates)} coordinates for z-value {z_value}.")
         with open(slice_coord_dir / f"{z_value}.txt", 'w') as f:
-            f.write("x,y,z\n")
+            f.write("x,y,z,t\n")
             for coord in coordinates:
-                f.write(f"{coord[0]},{coord[1]},{coord[2]}\n")
+                f.write(f"{coord[0]},{coord[1]},{coord[2]},{coord[3]}\n")
         mask_files = glob.glob(str(cluster_instance[0] / 'total_segmentation_mask*'))
         print(mask_files)
         shutil.copy(Path(cluster_instance[0] / 'original_image.jpg'), slice_img_dir / f"{z_value}.jpg")
         skeleton = thin_and_display_mask(Path(mask_files[0]))
         cv2.imwrite(slice_mask_dir / f"{z_value}.png", skeleton)
+    return all_segs
+
+def save_windings(all_segs, slice_img_dir, slice_winding_dir):
+    for z_value, segments in all_segs['slices'].items():
+        slice_img = cv2.imread(str(slice_img_dir / f"{z_value}.jpg"))
+        # print(f'Length of segments: {len(segments)}')
+        merged_list = [item for sublist in segments for item in sublist]
+        # print(f'Length of merged list: {len(merged_list)}')
+        for i, p in enumerate(merged_list):
+            cv2.circle(slice_img, (int(p[0]), int(p[1])), 3, (0, int((1-(i/len(merged_list)))*255), int((i/len(merged_list))*255)), -1) # BGR format
+            if i < len(merged_list) - 1:
+                # print(f'p: {p}, p+1: {merged_list[i+1]}')
+                cv2.line(slice_img, (int(p[0]), int(p[1])), (int(merged_list[i+1][0]), int(merged_list[i+1][1])), (255,255,255),1)
+        # for segment_points in segments:
+        #     for i, segment_point in enumerate(segment_points):
+        #         cv2.circle(slice_img, (int(segment_point[0]), int(segment_point[1])), 3, (0, int((1-(i/len(segment_points)))*255), int((i/len(segment_points))*255)), -1) # BGR format
+        #         if i < len(segment_points) - 1:
+        #             cv2.line(slice_img, (int(segment_point[0]), int(segment_point[1])), (int(segment_points[i+1][0]), int(segment_points[i+1][1])),
+        #                      (255,255,255), 1)
+        cv2.imwrite(str(slice_winding_dir / f"{z_value}.jpg"), slice_img)
 
 def main():
     args = parse_arguments()
@@ -251,19 +391,31 @@ def main():
     SLICE_COORD_DIR.mkdir(parents=True, exist_ok=True)
     SLICE_MASK_DIR.mkdir(parents=True, exist_ok=True)
 
-    # pre_process_files(input_dir, SLICE_IMG_DIR, SLICE_COORD_DIR, SLICE_MASK_DIR)
+    all_segs = pre_process_files(input_dir, SLICE_IMG_DIR, SLICE_COORD_DIR, SLICE_MASK_DIR)
 
-    all_slices = natsorted(list(SLICE_COORD_DIR.glob('*.txt')))
-    all_masks = natsorted(list(SLICE_MASK_DIR.glob('*.png')))
-    all_images = natsorted(list(SLICE_IMG_DIR.glob('*.jpg')))
+    with open(output_dir / 'all_segs.pkl', 'wb') as f:
+        pickle.dump(all_segs, f)
 
-    obj_idx = 1
+    # all_slices = natsorted(list(SLICE_COORD_DIR.glob('*.txt')))
+    # all_masks = natsorted(list(SLICE_MASK_DIR.glob('*.png')))
+    # all_images = natsorted(list(SLICE_IMG_DIR.glob('*.jpg')))
 
-    with open(output_dir / 'output.obj', 'w') as obj_file:
-        for i in range(5):
-            curr_z = float(all_slices[i].stem)
-            next_z = float(all_slices[i+1].stem)
-            obj_idx = raster_masks_to_points(all_masks[i], all_masks[i+1], curr_z, next_z, obj_file, obj_idx, n_steps=0.0001)
+    # obj_idx = 1
+
+    # with open(output_dir / 'output.obj', 'w') as obj_file:
+    #     for i in range(5):
+    #         curr_z = float(all_slices[i].stem)
+    #         next_z = float(all_slices[i+1].stem)
+    #         obj_idx = raster_masks_to_points(all_masks[i], all_masks[i+1], curr_z, next_z, obj_file, obj_idx, n_steps=0.0001)
+    # read pickle file
+    with open(output_dir / 'all_segs.pkl', 'rb') as f:
+        all_segs = pickle.load(f)
+    SLICE_WINDING_DIR = Path(output_dir / 'slice_winding')
+    SLICE_WINDING_DIR.mkdir(parents=True, exist_ok=True)
+    save_windings(all_segs, SLICE_IMG_DIR, SLICE_WINDING_DIR)
+
+
+
 
 
 if __name__ == "__main__":
