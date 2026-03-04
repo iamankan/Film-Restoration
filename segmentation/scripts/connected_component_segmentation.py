@@ -317,12 +317,115 @@ def correct_for_winding(segment_list):
     return tmp
 
 
+class Segment:
+    def __init__(self, idx, pointset):
+        self.idx = idx
+        self.points = pointset
+        self.start = pointset[0]
+        self.end = pointset[-1]
+        self.start_out = None
+        self.start_in = None
+        self.end_out = None
+        self.end_in = None
+        self.visited = False
+        self.traversed = False
+    
+    def get_idx(self):
+        return self.idx
+    
+    def get_start(self):
+        return self.start
+    
+    def get_end(self):
+        return self.end
+    
+    def extrapolate_vector(self, side='end', b=15, window=10):
+        if side == 'end':
+            pts = self.points[-window:]
+            dir = np.array(pts[-1]) - np.array(pts[0])
+            a = self.end
+        elif side == 'start':
+            pts = self.points[:window]
+            dir = np.array(pts[0]) - np.array(pts[-1])
+            a = self.start
+        
+        norm = np.linalg.norm(dir)
+        if norm == 0: return a
+        
+        u_hat = dir / norm
+        
+        return a + (u_hat * b)
 
+def build_kdtree(segments):
+    tree_coords = []
+    metadata = []
+
+    for seg in segments:
+        tree_coords.append(seg.start)
+        metadata.append({'obj': seg, 'type': 'start'})
+
+        tree_coords.append(seg.end)
+        metadata.append({'obj': seg, 'type': 'end'})
+    
+    tree_coords = np.array(tree_coords)
+    kdtree = KDTree(data=tree_coords)
+
+    return kdtree, metadata
+
+def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, search_radius, k:int=1):
+    if curr_seg.visited:
+        return # This segment is already fully connected, skip the KD-Tree search
+    
+    curr_seg.visited = True
+    start_extrapolation = curr_seg.extrapolate_vector(side='start', b=b, window=window)
+    end_extrapolation = curr_seg.extrapolate_vector(side='end', b=b, window=window)
+
+    dist_start, idx_start = kdtree.query(x=start_extrapolation, k=k, distance_upper_bound=search_radius)
+    if dist_start != float('inf'):
+        next_metadata = metadata[idx_start]
+        next_seg = next_metadata['obj']
+        next_side = next_metadata['type'] # start/end
+
+        if next_seg.get_idx() != curr_seg.get_idx():
+            curr_seg.start_out = (next_seg.get_idx(), next_side)
+            if next_side == 'end':
+                next_seg.end_in = (curr_seg.get_idx(), 'start')
+            elif next_side == 'start':
+                next_seg.start_in = (curr_seg.get_idx(), 'start')
+
+            
+
+    dist_end, idx_end = kdtree.query(x=end_extrapolation, k=k, distance_upper_bound=search_radius)
+    if dist_end != float('inf'):
+        next_metadata = metadata[idx_end]
+        next_seg = next_metadata['obj']
+        next_side = next_metadata['type'] # start/end
+
+        if next_seg.get_idx() != curr_seg.get_idx():
+            curr_seg.end_out = (next_seg.get_idx(), next_side)
+            if next_side == 'end':
+                next_seg.end_in = (curr_seg.get_idx(), 'end')
+            elif next_side == 'start':
+                next_seg.start_in = (curr_seg.get_idx(), 'end')
+
+
+def order_with_winding(segment_list):
+    print(f'Order with winding logic....')
+    n = len(segment_list)
+    if n==1 : return segment_list
+    segments = [Segment(idx=i, pointset=segment_list[i]) for i in range(n)]
+    # Building the KDTree
+    kdtree, metadata = build_kdtree(segments=segments)
+    for curr_seg in segments:
+        search_in_kdtree(kdtree=kdtree, metadata=metadata, curr_seg=curr_seg, b=10, window=15, search_radius=20)
+    for segment in segments:
+        print(f'Printing segments from KDTREE ====================')
+        print(segment.__dict__)
 
 def pre_process_files(input_dir, slice_img_dir, slice_coord_dir, slice_mask_dir):
     all_segs = {'slices': {}}
     for it, slice in enumerate(natsorted(input_dir.iterdir())):
-        # if it > 20: break
+        if it > 1: break
         print(f"Processing slice: {slice.name}")
         vol_id = slice.name.split('_')[0]
         print(f"Extracted volume ID: {vol_id}")
@@ -339,6 +442,7 @@ def pre_process_files(input_dir, slice_img_dir, slice_coord_dir, slice_mask_dir)
             coord_list = read_coordinates(coord_file, z_value)
             tmp.append([t[:2] for t in coord_list])
             coordinates.extend(coord_list)
+        order_with_winding(tmp)
         tmp = correct_for_winding(tmp)
         all_segs['slices'][str(z_value)] = tmp
         print(f"Read {len(coordinates)} coordinates for z-value {z_value}.")

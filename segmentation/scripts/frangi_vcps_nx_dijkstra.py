@@ -169,7 +169,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
          txt_coord: bool=False, write_vcps: bool=False,
          frangi_sigma_min:int=6, frangi_sigma_max:int=12,
            frangi_sigma_step:int=1, frangi_black_ridges:bool=False, 
-           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0):
+           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0, frangi_weight:float = 1.0):
     
     print(f'Shape of the film slice is: {original_image.shape}')
     img_min = original_image[:, :, 0].min()
@@ -185,15 +185,17 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
 
     center_point = (cy//2, cx//2)
 
-    # clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
+    clustered_gaussian = cv2.GaussianBlur(clustered, (gaussian_kernel, gaussian_kernel), 0)
 
-    clustered_frangi = frangi(clustered, 
+    clustered_frangi = frangi(clustered_gaussian, 
                               sigmas=range(frangi_sigma_min,frangi_sigma_max,frangi_sigma_step),
                               alpha=frangi_alpha,
                               beta=frangi_beta, # should help ignore the mounts
                               gamma=frangi_gamma, # ignore low contrast as much as possible
                               black_ridges=frangi_black_ridges # films are bright
                               ) # gets 0-1
+    
+    clustered_frangi = clustered_frangi * frangi_weight
     
 
     
@@ -224,7 +226,8 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
     # _, binary = cv2.threshold(clustered_gaussian, (img_max - img_min) // threshold_factor, img_max, cv2.THRESH_BINARY)
     _, binary = cv2.threshold(clustered_frangi, (frangi_max - frangi_min) // threshold_factor, frangi_max, cv2.THRESH_BINARY)
     
-    skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_GUOHALL)
+    # skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_GUOHALL)
+    skeleton = cv2.ximgproc.thinning(binary, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
 
     binary_segmentation_mask = np.zeros_like(original_image[:, :, 0])
         
@@ -240,7 +243,7 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.imwrite(f'{save_at_cluster}/cluster.jpg', clustered)
         cv2.imwrite(f'{save_at_cluster}/skeleton_{gaussian_kernel}.jpg', skeleton)
         cv2.imwrite(f'{save_at_cluster}/binary_{gaussian_kernel}.jpg', binary)
-        # cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
+        cv2.imwrite(f'{save_at_cluster}/gaussian_{gaussian_kernel}.jpg', clustered_gaussian)
         cv2.imwrite(f'{save_at_cluster}/frangi.jpg', clustered_frangi)
     
 
@@ -378,7 +381,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
            intensity_alpha: float=1, mask_thickness: int=2, txt_coord: bool=False, write_vcps: bool=False,
            frangi_sigma_min:int=6, frangi_sigma_max:int=12,
            frangi_sigma_step:int=1, frangi_black_ridges:bool=False, 
-           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0):
+           frangi_alpha:float=0.5, frangi_beta:float=0.5, frangi_gamma:float=15, trim_val: int=0, frangi_weight: float=1.0):
     
     if output_folder:
         uuid_id = str(uuid.uuid4())
@@ -435,7 +438,7 @@ def kmeans(volpkg_dir: Path, film_slice: str, output_folder: str, volume: str, t
              frangi_sigma_min=frangi_sigma_min, frangi_sigma_max=frangi_sigma_max,
            frangi_sigma_step=frangi_sigma_step, frangi_black_ridges=frangi_black_ridges, 
            frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma,
-           trim_val=trim_val)
+           trim_val=trim_val, frangi_weight=frangi_weight)
     
     print("Press any key to exit the program!")
     cv2.waitKey(cv_wait_key_val)
@@ -468,6 +471,7 @@ def main():
     parser.add_argument('--frangi-alpha', help="Enter alpha value for frangi.", type=float, default=0.5)
     parser.add_argument('--frangi-beta', help="Enter beta value for frangi.", type=float, default=0.5)
     parser.add_argument('--frangi-gamma', help="Enter gamma value for frangi.", type=float, default=15)
+    parser.add_argument('--frangi-weight', help="Use this to weight up or down the frangi output", type=float, default=1.0)
 
     parser.add_argument('--trim-val', help="Enter the number of points you want to trim from the final segmentation, \
                         such that you don't encounter any bad meshing.", type=int, default=0)
@@ -504,6 +508,7 @@ def main():
     frangi_alpha = args.frangi_alpha
     frangi_beta = args.frangi_beta
     frangi_gamma = args.frangi_gamma
+    frangi_weight = args.frangi_weight
 
     print("Frangi filter parameters:")
     print(f"  sigma_min      : {frangi_sigma_min}")
@@ -513,6 +518,7 @@ def main():
     print(f"  alpha          : {frangi_alpha}")
     print(f"  beta           : {frangi_beta}")
     print(f"  gamma          : {frangi_gamma}")
+    print(f"  weight         : {frangi_weight}")
 
 
     print(f'Writing coords to txt file: {txt_coord}')
@@ -535,7 +541,7 @@ def main():
            write_vcps=write_vcps, frangi_sigma_min=frangi_sigma_min, frangi_sigma_max=frangi_sigma_max,
            frangi_sigma_step=frangi_sigma_step, frangi_black_ridges=frangi_black_ridges, 
            frangi_alpha=frangi_alpha, frangi_beta=frangi_beta, frangi_gamma=frangi_gamma,
-           trim_val=trim_val)
+           trim_val=trim_val, frangi_weight=frangi_weight)
 
 
 if __name__ == "__main__":

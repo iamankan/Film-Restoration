@@ -19,6 +19,7 @@ FRANGI_SIGMA_STEP=2
 FRANGI_ALPHA=0.3
 FRANGI_BETA=0.3
 FRANGI_GAMMA=1
+FRANGI_WEIGHT=1.0
 
 TRIM_VAL=10
 
@@ -47,6 +48,7 @@ print_help() {
     echo "  --frangi-sigma-min $FRANGI_SIGMA_MIN  --frangi-sigma-max $FRANGI_SIGMA_MAX"
     echo "  --frangi-sigma-step $FRANGI_SIGMA_STEP  --frangi-alpha $FRANGI_ALPHA"
     echo "  --frangi-beta $FRANGI_BETA  --frangi-gamma $FRANGI_GAMMA --trim-val $TRIM_VAL"
+    echo "  --frangi-weight $FRANGI_WEIGHT"
 }
 
 # Parse named arguments
@@ -72,6 +74,7 @@ while [[ "$#" -gt 0 ]]; do
         --frangi-alpha) FRANGI_ALPHA="$2"; shift ;;
         --frangi-beta) FRANGI_BETA="$2"; shift ;;
         --frangi-gamma) FRANGI_GAMMA="$2"; shift ;;
+        --frangi-weight) FRANGI_WEIGHT="$2"; shift ;;
         --trim-val) TRIM_VAL="$2"; shift ;;
         --help) print_help; exit 0 ;;
         *) echo "Unknown parameter: $1"; print_help; exit 1 ;;
@@ -156,6 +159,7 @@ for (( i=$START_NUM; i<=$END_NUM; i+=$STEP_SIZE )); do
         echo "FRANGI_ALPHA=$FRANGI_ALPHA"
         echo "FRANGI_BETA=$FRANGI_BETA"
         echo "FRANGI_GAMMA=$FRANGI_GAMMA"
+        echo "FRANGI_WEIGHT=$FRANGI_WEIGHT"
     } > "$RUN_CONFIG"
 
     echo "Config saved successfully."
@@ -184,6 +188,7 @@ for (( i=$START_NUM; i<=$END_NUM; i+=$STEP_SIZE )); do
             --frangi-beta "$FRANGI_BETA"
             --frangi-gamma "$FRANGI_GAMMA"
             --trim-val "$TRIM_VAL"
+            --frangi-weight "$FRANGI_WEIGHT"
             --txt-coord
         )
 
