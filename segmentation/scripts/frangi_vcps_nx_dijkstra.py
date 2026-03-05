@@ -307,16 +307,17 @@ def thin(volpkg_dir: Path, volume: str, film_slice: str, original_image: np.arra
         cv2.circle(colored_path, (end[1], end[0]), 10, (0,0,255),2) # end - Red
 
         # print(f'Length of the shortest path between start and end is: {len(shortestpath)} pixels, and cost is {shortestdist}.')
-        if total_seg_points:
+        # if total_seg_points:
             # print(f'Saving the segmentation mask binary image.')
             # binary_segmentation_mask
-            for sp in shortestpath:
-                cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
-                           mask_thickness)
-            # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
+        for sp in shortestpath:
+            cv2.circle(binary_segmentation_mask, (sp[1], sp[0]), mask_thickness, 255,
+                        mask_thickness)
+        # print(f'Making the total-seg-points from {len(shortestpath)} to {total_seg_points}')
+        if total_seg_points>0:
             shortestpath = select_n_points(shortestpath, total_seg_points, trim_val)
-            # print(f'After selecting {total_seg_points} points, the total points are {len(shortestpath)} and shortest path is {shortestpath[0]}')
-            # print(f'Now the total points are {len(shortestpath)}')
+        # print(f'After selecting {total_seg_points} points, the total points are {len(shortestpath)} and shortest path is {shortestpath[0]}')
+        # print(f'Now the total points are {len(shortestpath)}')
             
         
 
