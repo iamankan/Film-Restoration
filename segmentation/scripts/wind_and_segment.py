@@ -459,7 +459,8 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
         _, prev_mid_idx, _ = vu_map[prev_z_idx][0]
         prev_mid_coord = ordered_segmentations[prev_z_value][int(prev_mid_idx)].get_point()
         curr_kd_tree, curr_kd_metadata = curr_pointset.get_kdtree()
-        _, curr_mid_idx = curr_kd_tree.query(x=[prev_mid_coord[0], prev_mid_coord[1]], k=1) # find the nearest point to the previous index
+        curr_dist, curr_mid_idx = curr_kd_tree.query(x=[prev_mid_coord[0], prev_mid_coord[1]], k=1) # find the nearest point to the previous index
+        print(f'Mid-point distance with previous layer mid: {curr_dist}. curr-z: {curr_z_value}, prev-z {prev_z_value}')
         u = 0
         vu_map[curr_z_idx][u] = (int(curr_z_value), int(curr_mid_idx), curr_pointset[curr_mid_idx].get_point())
 
@@ -480,7 +481,14 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
             print(f'Winding is wrong..Fixing it...')
             curr_pointset.reverse_pointset() # Reversing the pointset
             ordered_segmentations[z_value]=curr_pointset
-            curr_mid_idx = curr_n - curr_mid_idx - 1 # adjust the mid-index after reversing the segment
+            # curr_mid_idx = curr_n - curr_mid_idx - 1 # adjust the mid-index after reversing the segment
+            curr_kd_tree, curr_kd_metadata = curr_pointset.get_kdtree()
+            curr_dist, curr_mid_idx = curr_kd_tree.query(x=[prev_mid_coord[0], prev_mid_coord[1]], k=1) # find the nearest point to the previous index
+            print(f'Mid-point distance with previous layer mid: {curr_dist}. curr-z: {curr_z_value}, prev-z {prev_z_value}')
+            u = 0
+            vu_map[curr_z_idx][u] = (int(curr_z_value), int(curr_mid_idx), curr_pointset[curr_mid_idx].get_point())
+            curr_left_idx = curr_mid_idx - delta
+            curr_right_idx = curr_mid_idx + delta
         
         # populate the right side of uv map
         for prev_u_right in prev_right_list:
@@ -619,8 +627,8 @@ def main():
 
     ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius)
 
-    with open(output_dir / segmentation_file_name, 'wb') as fseg:
-        pickle.dump(ordered_segmentations, fseg)
+    # with open(output_dir / segmentation_file_name, 'wb') as fseg:
+    #     pickle.dump(ordered_segmentations, fseg)
     
     draw_winding(ordered_segments=ordered_segmentations, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
