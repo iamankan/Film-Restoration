@@ -120,8 +120,10 @@ def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, searc
     end_extrapolation = curr_seg.extrapolate_vector(side='end', b=b, window=window)
 
     dist_start, idx_start = kdtree.query(x=start_extrapolation, k=k, distance_upper_bound=search_radius)
+    print(f'idx: {curr_seg.get_idx()}, start: {dist_start, idx_start}')
     if dist_start != float('inf'):
         next_metadata = metadata[idx_start]
+        print(f'next-metadata: {next_metadata}, curr-idx: {curr_seg.get_idx()}')
         next_seg = next_metadata['obj']
         next_side = next_metadata['type'] # start/end
 
@@ -135,8 +137,10 @@ def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, searc
             
 
     dist_end, idx_end = kdtree.query(x=end_extrapolation, k=k, distance_upper_bound=search_radius)
+    print(f'idx: {curr_seg.get_idx()}, end: {dist_end, idx_end}')
     if dist_end != float('inf'):
         next_metadata = metadata[idx_end]
+        print(f'next-metadata: {next_metadata}')
         next_seg = next_metadata['obj']
         next_side = next_metadata['type'] # start/end
 
@@ -180,6 +184,7 @@ def traverse_segments(segments):
 
     
     if len(terminal_segments) < 2 or len(valid_segments) == 0:
+        print(f'Number of terminal: {len(terminal_segments)}, number of valid segments: {len(valid_segments)}')
         print("No valid segments...Maybe its a cycle...Maybe a loop...")
         return
     
@@ -264,6 +269,8 @@ def pre_process_files(input_dir, slice_img_dir, b=40, window=50, search_radius=5
         segmentation_instance = [i for i in slice.iterdir() if i.is_dir()]
         cluster_instance = [i for i in segmentation_instance[0].iterdir() if i.is_dir()]
         coordinate_instance = [i for i in natsorted(cluster_instance[0].glob('*.txt'))]
+        # total_colored_segmentation_
+        winding_instance = [i for i in natsorted(cluster_instance[0].glob('total_colored_segmentation_*.jpg'))]
 
         print(f"Found {len(coordinate_instance)} coordinate files for z-value {z_value}.")
 
@@ -456,7 +463,7 @@ def write_obj_xyz(filename, vertices, faces, uv_map):
             f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
 
 
-def create_uv_mesh(segmentation_file, delta=5):
+def create_uv_mesh(segmentation_file, output_folder, delta=5):
     with open(segmentation_file, 'rb') as f:
         ordered_segments = pickle.load(f)
     
@@ -516,40 +523,51 @@ def create_uv_mesh(segmentation_file, delta=5):
     U = max(u_list)
     V = max(v_list)
     print(f'The uv-range is from {u,v} to {U,V} with a step size of {delta}')
-    print(f'The size of array after normalization is {V-v} x {U-u}')
-    normalized_uv_mapping = {}
-    normalized_uv_array = []
+    # print(f'The size of array after normalization is {V-v} x {U-u}')
+    uv_mapping_array = []
     for v_key in v_list:
-        normalized_uv_mapping[v_key-v]={}
         u_keys = list(uv_mapping[v_key])
         for u_key in u_keys:
-            normalized_uv_mapping[v_key-v][u_key-u]=uv_mapping[v_key][u_key]
-            normalized_uv_array.append([u_key-u,v_key-v])
-    normalized_uv_array_np = np.array(normalized_uv_array)
-    print(f'Normalized array shape: {normalized_uv_array_np.shape}')
+            uv_mapping_array.append([u_key,v_key])
+    uv_mapping_array_np = np.array(uv_mapping_array)
+    print(f'map[0][0]: {uv_mapping[0][0]}')
+
+    # normalized_uv_mapping = {}
+    # normalized_uv_array = []
+    # for v_key in v_list:
+    #     normalized_uv_mapping[v_key-v]={}
+    #     u_keys = list(uv_mapping[v_key])
+    #     for u_key in u_keys:
+    #         normalized_uv_mapping[v_key-v][u_key-u]=uv_mapping[v_key][u_key]
+    #         normalized_uv_array.append([u_key-u,v_key-v])
+    # normalized_uv_array_np = np.array(normalized_uv_array)
+    # print(f'Normalized array shape: {normalized_uv_array_np.shape}')
+    # print(f'map_norm[0][0]: {normalized_uv_mapping[0]}')
+    with open(f'{output_folder}/uv_mesh.json', 'w') as fuv:
+        json.dump(uv_mapping, fuv)
 
     print("Started Delauny")
-    tri = Delaunay(normalized_uv_array_np)
+    tri = Delaunay(uv_mapping_array_np)
     print("Finished Delauny")
     filtered_simplices = tri.simplices
 
 
-    tri_points = normalized_uv_array_np[tri.simplices]
+    tri_points = uv_mapping_array_np[tri.simplices]
     diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
     mask = diff_y <= 1.0
     filtered_simplices = tri.simplices[mask]
 
 
-    # plt.triplot(normalized_uv_array_np[:,0], normalized_uv_array_np[:,1], filtered_simplices)
-    # plt.plot(normalized_uv_array_np[:,0], normalized_uv_array_np[:,1], 'o')
+    # plt.triplot(uv_mapping_array_np[:,0], uv_mapping_array_np[:,1], filtered_simplices)
+    # plt.plot(uv_mapping_array_np[:,0], uv_mapping_array_np[:,1], 'o')
     # plt.show()
 
 
     print(filtered_simplices) # Indices for vertices
     for i, simp in enumerate(filtered_simplices):
-        triangle0 = np.unravel_index(simp[0], normalized_uv_array_np.shape)
-        triangle1 = np.unravel_index(simp[1], normalized_uv_array_np.shape)
-        triangle2 = np.unravel_index(simp[2], normalized_uv_array_np.shape)
+        triangle0 = np.unravel_index(simp[0], uv_mapping_array_np.shape)
+        triangle1 = np.unravel_index(simp[1], uv_mapping_array_np.shape)
+        triangle2 = np.unravel_index(simp[2], uv_mapping_array_np.shape)
         u0,v0 = triangle0
         u0,v0 = int(u0),int(v0)
         u1,v1 = triangle1
@@ -559,14 +577,31 @@ def create_uv_mesh(segmentation_file, delta=5):
         print(f'{i}: {u0,v0} {u1,v1} {u2,v2}')
         break
 
-    flattened_vertices = normalized_uv_array_np.reshape(-1, 2)
-    write_obj_uv(filename='/localdisk0/test-segmentation/delauny_uv.obj', vertices=flattened_vertices, faces=filtered_simplices)
-    write_obj_xyz(filename='/localdisk0/test-segmentation/delauny_original.obj', vertices=flattened_vertices, faces=filtered_simplices,
-                  uv_map=normalized_uv_mapping)
+    flattened_vertices = uv_mapping_array_np.reshape(-1, 2)
+    write_obj_uv(filename=f'{output_folder}/delauny_uv_{delta}.obj', vertices=flattened_vertices, faces=filtered_simplices)
+    write_obj_xyz(filename=f'{output_folder}/delauny_original_{delta}.obj', vertices=flattened_vertices, faces=filtered_simplices,
+                  uv_map=uv_mapping)
 
 
 
+def test_delauny():
+    arr = np.array([[-3,0], [-2,0], [-1,0], [0,0], [1,0], [2,0], [3,0],
+                                    [-1,1], [0,1], [1,1],
+                                            [0,2], [1,2], [3,2],
+                                    [-1,3], [0,3]
+                    ])
+    tri = Delaunay(arr)
+    filtered_simplices = tri.simplices
 
+    tri_points = arr[tri.simplices]
+    diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
+    mask = diff_y <= 1.0
+    filtered_simplices = tri.simplices[mask]
+
+
+    plt.triplot(arr[:,0], arr[:,1], filtered_simplices)
+    plt.plot(arr[:,0], arr[:,1], 'o')
+    plt.show()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Parameters for file handling')
@@ -615,28 +650,21 @@ def main():
 
     MESH_DIR = Path(output_dir / mesh_file_name)
 
-    # ordered_segments = pre_process_files(input_dir, SLICE_IMG_DIR, b=displacement, window=window, search_radius=search_radius)
+    # test_delauny()
+
+    ordered_segments = pre_process_files(input_dir, SLICE_IMG_DIR, b=displacement, window=window, search_radius=search_radius)
 
     output_segmentation_fname = Path(output_dir / f'{segmentation_file_name}')
 
-    # with open(output_segmentation_fname, 'wb') as f:
-    #     pickle.dump(ordered_segments, f)
+    with open(output_segmentation_fname, 'wb') as f:
+        pickle.dump(ordered_segments, f)
     
-    # with open(output_segmentation_fname, 'rb') as f:
-    #     ordered_segments = pickle.load(f)
+    with open(output_segmentation_fname, 'rb') as f:
+        ordered_segments = pickle.load(f)
     
-    # # save_windings(ordered_segments, SLICE_IMG_DIR, SLICE_WINDING_DIR)
+    save_windings(ordered_segments, SLICE_IMG_DIR, SLICE_WINDING_DIR)
 
-    # # calculate the height and width of a slice to map uv-coord in mesh file
-    # for i in SLICE_IMG_DIR.iterdir():
-    #     img = iio.imread(i)
-    #     h, w, _ = img.shape
-
-    # make_meshes(segmentation_file=output_segmentation_fname, mesh_file=MESH_DIR, h=h, w=w)
-
-    create_uv_mesh(segmentation_file=output_segmentation_fname, delta=uv_delta)
-
-
+    create_uv_mesh(segmentation_file=output_segmentation_fname, output_folder=output_dir, delta=uv_delta)
 
 
 
