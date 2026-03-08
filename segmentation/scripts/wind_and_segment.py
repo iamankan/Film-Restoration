@@ -94,7 +94,8 @@ class Pointset:
         tree_array = []
         metadata = []
         for pt in self.pointset:
-            tree_array.append(pt.get_point())
+            p = pt.get_point()
+            tree_array.append([p[0], p[1]])
             metadata.append({'Point': pt})
         kdtree = KDTree(data=np.array(tree_array))
         return kdtree, metadata
@@ -303,8 +304,10 @@ def traverse_segments(segments):
 
     start = True
     end = False
-
+    counter = 0
     while not tail.traversed:
+        print(f'Traversing...{counter}')
+        counter += 1
         curr_segment = head
         curr_segment.traversed = True
         next_reverse_order = False
@@ -341,11 +344,13 @@ def traverse_segments(segments):
         next_segment = segments[next_segment_idx]
         if start:
             if curr_reverse_order:
+                print(f'Winding wrong. Reversing..')
                 curr_segment.reverse_segment()
             globally_ordered_slice_segment.extend(curr_segment.points)
         
         if not end:
             if next_reverse_order:
+                print(f'Winding wrong. Reversing..')
                 next_segment.reverse_segment()
             globally_ordered_slice_segment.extend(next_segment.points)
         
@@ -357,7 +362,7 @@ def traverse_segments(segments):
     return Pointset(globally_ordered_slice_segment)
 
 
-def join_segments(ordered_pointsets: list):
+def join_segments(ordered_pointsets: list, b, window, search_radius):
     print(f'Recieved {len(ordered_pointsets)} ordered pointsets')
     if len(ordered_pointsets) == 1: return ordered_pointsets[0]
 
@@ -365,17 +370,17 @@ def join_segments(ordered_pointsets: list):
     segments = [Segment(idx=i, pointset=ordered_pointsets[i]) for i in range(len(ordered_pointsets))]
     kdtree, kdmetadata = build_kdtree(segments=segments)
     for curr_segment in segments:
-        search_in_kdtree(kdtree=kdtree, metadata=kdmetadata, curr_seg=curr_segment, b=40, window=50, search_radius=50)
+        search_in_kdtree(kdtree=kdtree, metadata=kdmetadata, curr_seg=curr_segment, b=b, window=window, search_radius=search_radius)
     globally_ordered_slice_segment = traverse_segments(segments=segments)
     return globally_ordered_slice_segment
 
-def process_segments(ordered_segmentations):
+def process_segments(ordered_segmentations, b, window, search_radius):
     z_list = list(ordered_segmentations.keys())
     for z_idx, z_value in enumerate(z_list):
         ordered_pointsets = ordered_segmentations[z_value] # list
         number_of_segments = len(ordered_pointsets)
         print(f'Z: {z_value}, Number of segments: {number_of_segments}')
-        globally_ordered_slice_segment = join_segments(ordered_pointsets=ordered_pointsets)
+        globally_ordered_slice_segment = join_segments(ordered_pointsets=ordered_pointsets, b=b, window=window, search_radius=search_radius)
         ordered_segmentations[z_value] = Pointset(globally_ordered_slice_segment)
     return ordered_segmentations
 
@@ -447,14 +452,14 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
         prev_u_list = sorted(list(vu_map[prev_z_idx].keys()))
         prev_min_u = min(prev_u_list)
         prev_max_u = max(prev_u_list)
-        prev_left_list = prev_u_list[prev_min_u:0]
+        prev_left_list = prev_u_list[prev_min_u:0][::-1]
         prev_right_list = prev_u_list[1:]
         prev_pointset = ordered_segmentations[prev_z_value]
         prev_n = len(prev_pointset)
         _, prev_mid_idx, _ = vu_map[prev_z_idx][0]
-        prev_mid_coord = ordered_segmentations[prev_z_value][int(prev_mid_idx)]
+        prev_mid_coord = ordered_segmentations[prev_z_value][int(prev_mid_idx)].get_point()
         curr_kd_tree, curr_kd_metadata = curr_pointset.get_kdtree()
-        _, curr_mid_idx = curr_kd_tree.query(x=prev_mid_coord.get_point(), k=1) # find the nearest point to the previous index
+        _, curr_mid_idx = curr_kd_tree.query(x=[prev_mid_coord[0], prev_mid_coord[1]], k=1) # find the nearest point to the previous index
         u = 0
         vu_map[curr_z_idx][u] = (int(curr_z_value), int(curr_mid_idx), curr_pointset[curr_mid_idx].get_point())
 
@@ -480,20 +485,22 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
         # populate the right side of uv map
         for prev_u_right in prev_right_list:
             _, prev_right_ordered_segmentation_idx, _ = vu_map[prev_z_idx][prev_u_right]
-            if prev_right_ordered_segmentation_idx > curr_n - 1: # The previous segment finished before the current segment
+            prev_right_coord = ordered_segmentations[prev_z_value][int(prev_right_ordered_segmentation_idx)].get_point()
+            _, curr_right_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_right_coord[0], prev_right_coord[1]], k=1)
+            if int(curr_right_ordered_Segmentation_idx) == curr_n - 1 or int(curr_right_ordered_Segmentation_idx) == 0: 
+                # if the segmentation index have hit the eds of the segmentation
                 break
-            prev_right_coord = ordered_segmentations[prev_z_value][int(prev_right_ordered_segmentation_idx)]
-            _, curr_right_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_right_coord.get_point()], k=1)
             vu_map[curr_z_idx][prev_u_right] = (curr_z_value, int(curr_right_ordered_Segmentation_idx), curr_pointset[int(curr_right_ordered_Segmentation_idx)].get_point())
             ordered_segmentations[prev_z_value][int(prev_right_ordered_segmentation_idx)].set_used_down(True)
             ordered_segmentations[curr_z_value][int(curr_right_ordered_Segmentation_idx)].set_used_up(True)
         # populate the left side of the uv map
         for prev_u_left in prev_left_list:
             _, prev_left_ordered_segmentation_idx, _ = vu_map[prev_z_idx][prev_u_left]
-            if prev_left_ordered_segmentation_idx <=0: # The current segment finished before the previous segment
+            prev_left_coord = ordered_segmentations[prev_z_value][int(prev_left_ordered_segmentation_idx)].get_point()
+            _, curr_left_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_left_coord[0], prev_left_coord[1]], k=1)
+            if int(curr_left_ordered_Segmentation_idx) == 0 or int(curr_left_ordered_Segmentation_idx) == curr_n - 1:
+                # if the segmentation index have hit the eds of the segmentation
                 break
-            prev_left_coord = ordered_segmentations[prev_z_value][int(prev_left_ordered_segmentation_idx)]
-            _, curr_left_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_left_coord.get_point()], k=1)
             vu_map[curr_z_idx][prev_u_left] = (curr_z_value, int(curr_left_ordered_Segmentation_idx), curr_pointset[int(curr_left_ordered_Segmentation_idx)].get_point())
             ordered_segmentations[prev_z_value][int(prev_left_ordered_segmentation_idx)].set_used_down(True)
             ordered_segmentations[curr_z_value][int(curr_left_ordered_Segmentation_idx)].set_used_up(True)
@@ -542,9 +549,9 @@ def meshify(ordered_segmentations_cleaned, vu_map, mesh_file):
     with open(mesh_file, 'w') as fmesh:
         for u,v in flattened_vertices:
             _,_, vertex = vu_map[v][u]
-            fmesh.write(f'v {vertex[0]} {vertex[1]} {vertex[2]}\n')
+            fmesh.write(f'v {vertex[0]+1} {vertex[1]+1} {vertex[2]+1}\n')
         for face in filtered_simplices:
-            fmesh.write(f'f {face[0]} {face[1]} {face[2]}\n')
+            fmesh.write(f'f {face[0]+1} {face[1]+1} {face[2]+1}\n')
 
 
 
@@ -558,6 +565,11 @@ def parse_arguments():
     file_parser.add_argument('--input-dir', type=Path, required=True, help='Path to the input image directory')
     file_parser.add_argument('--output-dir', type=Path, required=True, help='Directory to save the output segmentation')
     file_parser.add_argument('--segmentation-file-name', type=Path, default="ordered_segments.pkl")
+
+    join_parser = parser.add_argument_group(title="PARAMETERS FOR JOINING SEGMENTS")
+    join_parser.add_argument('--b', type=int, default=50)
+    join_parser.add_argument('--window', type=int, default=10)
+    join_parser.add_argument('--search-radius', type=int, default=20)
 
 
     mesh_parser = parser.add_argument_group(title='MESH GENERATION', description="Parameters for generating meshes")
@@ -578,6 +590,9 @@ def main():
     mesh_output_dir = args.mesh_output_dir
     mesh_output_dir = mesh_output_dir if mesh_output_dir else output_dir
     delta = args.delta
+    b = args.b
+    window = args.window
+    search_radius = args.search_radius
 
     SLICE_IMG_DIR = Path(output_dir / 'slice_images')
     SLICE_IMG_DIR.mkdir(parents=True, exist_ok=True)
@@ -602,7 +617,7 @@ def main():
         print(type(ordered_segmentations[i][0][0])) # point
         break
 
-    ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations)
+    ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius)
 
     with open(output_dir / segmentation_file_name, 'wb') as fseg:
         pickle.dump(ordered_segmentations, fseg)
