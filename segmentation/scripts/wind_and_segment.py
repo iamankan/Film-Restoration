@@ -77,8 +77,6 @@ class Pointset:
     def __init__(self, pointset):
         self.pointset = pointset
 
-    
-    # Delegate standard list operations
     def __len__(self): return len(self.pointset)
     def __getitem__(self, i): return self.pointset[i]
     def __iter__(self): return iter(self.pointset)
@@ -137,11 +135,19 @@ class Segment:
     def extrapolate_vector(self, side='end', b=15, window=10):
         if side == 'end':
             pts = self.points[-window:]
-            dir = np.array(pts[-1].get_point()) - np.array(pts[0].get_point())
+            # dir = np.array(pts[-1].get_point()) - np.array(pts[0].get_point())
+            dir = np.array(pts[-1].get_point())*0
+            for pi in pts[:-1]:
+                dir += np.array(pts[-1].get_point()) - np.array(pi.get_point())
+            dir = dir / (window - 1)
             a = self.end.get_point()
         elif side == 'start':
             pts = self.points[:window]
-            dir = np.array(pts[0].get_point()) - np.array(pts[-1].get_point())
+            # dir = np.array(pts[0].get_point()) - np.array(pts[-1].get_point())
+            dir = np.array(pts[0].get_point())*0
+            for pi in pts[1:]:
+                dir += np.array(pts[0].get_point())- np.array(pi.get_point())
+            dir = dir / (window - 1)
             a = self.start.get_point()
         
         norm = np.linalg.norm(dir)
@@ -224,6 +230,62 @@ def build_kdtree(segments):
 
     return kdtree, metadata
 
+def clean_segment_links(segments):
+    print(f'Cleaning segment. Total segments: {len(segments)}')
+    nseg = len(segments)
+    for i in range(nseg):
+        curr_seg = segments[i]
+        curr_seg_idx = curr_seg.get_idx()
+        if (curr_seg.start_out == None and curr_seg.start_in is not None):
+            print(f'Segment {curr_seg_idx} is not ok!')
+            next_idx, next_type = curr_seg.start_in
+            curr_seg.start_out = (next_idx, next_type)
+            next_seg = segments[next_idx]
+            if next_type == 'end':
+                if next_seg.end_in == None:
+                    next_seg.end_in = (curr_seg_idx, 'start')
+            elif next_type == 'start':
+                if next_seg.start_in == None:
+                    next_seg.start_in = (curr_seg_idx, 'start')
+        elif (curr_seg.start_out is not None and curr_seg.start_in == None):
+            print(f'Segment {curr_seg_idx} is not ok!')
+            next_idx, next_type = curr_seg.start_out
+            curr_seg.start_in = (next_idx, next_type)
+            next_seg = segments[next_idx]
+            if next_type == 'end':
+                if next_seg.end_out == None:
+                    next_seg.end_out = (curr_seg_idx, 'start')
+            elif next_type == 'start':
+                if next_seg.start_out == None:
+                    next_seg.start_out = (curr_seg_idx, 'start')
+        elif (curr_seg.end_out == None and curr_seg.end_in is not None):
+            print(f'Segment {curr_seg_idx} is not ok!')
+            next_idx, next_type = curr_seg.end_in
+            curr_seg.end_out = (next_idx, next_type)
+            next_seg = segments[next_idx]
+            if next_type == 'end':
+                if next_seg.end_in is None:
+                    next_seg.end_in = (curr_seg_idx, 'end')
+            elif next_type == 'start':
+                if next_seg.start_in is None:
+                    next_seg.start_in = (curr_seg_idx, 'end')
+
+        elif (curr_seg.end_out is not None and curr_seg.end_in == None):
+            print(f'Segment {curr_seg_idx} is not ok!')
+            next_idx, next_type = curr_seg.end_out
+            curr_seg.end_in = (next_idx, next_type)
+            next_seg = segments[next_idx]
+            if next_type == 'end':
+                if next_seg.end_out is None:
+                    next_seg.end_out = (curr_seg_idx, 'end')
+            elif next_type == 'start':
+                if next_seg.start_out is None:
+                    next_seg.start_out = (curr_seg_idx, 'end')
+        segments[i] = curr_seg
+        
+    return segments
+
+
 def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, search_radius, k:int=1):
     if curr_seg.visited:
         return # This segment is already fully connected, skip the KD-Tree search
@@ -233,10 +295,8 @@ def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, searc
     end_extrapolation = curr_seg.extrapolate_vector(side='end', b=b, window=window)
 
     dist_start, idx_start = kdtree.query(x=start_extrapolation, k=k, distance_upper_bound=search_radius)
-    # print(f'idx: {curr_seg.get_idx()}, start: {dist_start, idx_start}')
     if dist_start != float('inf'):
         next_metadata = metadata[idx_start]
-        # print(f'next-metadata: {next_metadata}, curr-idx: {curr_seg.get_idx()}')
         next_seg = next_metadata['obj']
         next_side = next_metadata['type'] # start/end
 
@@ -247,13 +307,9 @@ def search_in_kdtree(kdtree:KDTree, metadata, curr_seg:Segment, b, window, searc
             elif next_side == 'start':
                 next_seg.start_in = (curr_seg.get_idx(), 'start')
 
-            
-
     dist_end, idx_end = kdtree.query(x=end_extrapolation, k=k, distance_upper_bound=search_radius)
-    # print(f'idx: {curr_seg.get_idx()}, end: {dist_end, idx_end}')
     if dist_end != float('inf'):
         next_metadata = metadata[idx_end]
-        # print(f'next-metadata: {next_metadata}')
         next_seg = next_metadata['obj']
         next_side = next_metadata['type'] # start/end
 
@@ -272,6 +328,7 @@ def traverse_segments(segments):
 
     globally_ordered_slice_segment = []
     for seg in segments:
+        print(f'>>>> Seg: {seg}')
         if seg.start_out == None and seg.start_in == None and seg.end_out == None and seg.end_in == None:
             invalid_segments.append(seg)
         else:
@@ -284,7 +341,7 @@ def traverse_segments(segments):
         for seg in invalid_segments:
             segLen.append(seg.get_num_points())
         seg_idx = np.argmax(np.array(segLen))
-        return invalid_segments[seg_idx].points
+        return Pointset(invalid_segments[seg_idx].points)
 
 
     
@@ -308,13 +365,13 @@ def traverse_segments(segments):
     while not tail.traversed:
         print(f'Traversing...{counter}')
         counter += 1
+        # if counter > 2*len(segments): break
         curr_segment = head
         curr_segment.traversed = True
         next_reverse_order = False
 
         if start:
             curr_reverse_order = False
-
             if curr_segment.start_out is not None:
                 curr_reverse_order = True
                 next_segment_idx, next_segment_recieving_type = curr_segment.start_out
@@ -356,7 +413,6 @@ def traverse_segments(segments):
         
         head = next_segment
         start = False
-        # print(f'Reverse order: Current: {curr_reverse_order}, Next: {next_reverse_order}')
         curr_reverse_order = next_reverse_order
     
     return Pointset(globally_ordered_slice_segment)
@@ -371,15 +427,21 @@ def join_segments(ordered_pointsets: list, b, window, search_radius):
     kdtree, kdmetadata = build_kdtree(segments=segments)
     for curr_segment in segments:
         search_in_kdtree(kdtree=kdtree, metadata=kdmetadata, curr_seg=curr_segment, b=b, window=window, search_radius=search_radius)
+    segments = clean_segment_links(segments=segments)
     globally_ordered_slice_segment = traverse_segments(segments=segments)
     return globally_ordered_slice_segment
 
-def process_segments(ordered_segmentations, b, window, search_radius):
+def process_segments(ordered_segmentations, b, window, search_radius, config=None):
     z_list = list(ordered_segmentations.keys())
     for z_idx, z_value in enumerate(z_list):
         ordered_pointsets = ordered_segmentations[z_value] # list
         number_of_segments = len(ordered_pointsets)
         print(f'Z: {z_value}, Number of segments: {number_of_segments}')
+        if config:
+            print(f'Config file provided.')
+            b = config[z_value]['b']
+            window = config[z_value]['window']
+            search_radius = config[z_value]['search_radius']
         globally_ordered_slice_segment = join_segments(ordered_pointsets=ordered_pointsets, b=b, window=window, search_radius=search_radius)
         ordered_segmentations[z_value] = Pointset(globally_ordered_slice_segment)
     return ordered_segmentations
@@ -514,17 +576,17 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
             ordered_segmentations[curr_z_value][int(curr_left_ordered_Segmentation_idx)].set_used_up(True)
         
     # clean up the ordered segmentations
-    for z_value in z_values:
-        print(f'Cleaning slice# {z_value}')
-        ordered_pointset = ordered_segmentations[z_value].get_pointset()
-        print(f'Type of ordered_pointset: {type(ordered_pointset)}')
-        unused_point_indices = []
-        for i, pt in enumerate(ordered_pointset):
-            if pt.used_down == False and pt.used_up == False:
-                unused_point_indices.append(i)
-        ordered_pointset_cleaned = [p for i, p in enumerate(ordered_pointset) if i not in unused_point_indices]
-        ordered_segmentations[z_value] = ordered_pointset_cleaned
-        print(f'Number of points after cleaning: {len(ordered_segmentations[z_value])}')
+    # for z_value in z_values:
+    #     print(f'Cleaning slice# {z_value}')
+    #     ordered_pointset = ordered_segmentations[z_value].get_pointset()
+    #     print(f'Type of ordered_pointset: {type(ordered_pointset)}')
+    #     unused_point_indices = []
+    #     for i, pt in enumerate(ordered_pointset):
+    #         if pt.used_down == False and pt.used_up == False:
+    #             unused_point_indices.append(i)
+    #     ordered_pointset_cleaned = [p for i, p in enumerate(ordered_pointset) if i not in unused_point_indices]
+    #     ordered_segmentations[z_value] = ordered_pointset_cleaned
+    #     print(f'Number of points after cleaning: {len(ordered_segmentations[z_value])}')
     
     return ordered_segmentations, vu_map
 
@@ -578,6 +640,7 @@ def parse_arguments():
     join_parser.add_argument('--b', type=int, default=50)
     join_parser.add_argument('--window', type=int, default=10)
     join_parser.add_argument('--search-radius', type=int, default=20)
+    join_parser.add_argument('--join-config-file', type=Path, help="A config file to get slice-wise b, window, search-results value, to make it more flexible.")
 
 
     mesh_parser = parser.add_argument_group(title='MESH GENERATION', description="Parameters for generating meshes")
@@ -601,6 +664,14 @@ def main():
     b = args.b
     window = args.window
     search_radius = args.search_radius
+    join_config_file = args.join_config_file
+    if join_config_file is None:
+        config=None
+        print(f'No config files provided for joining segments.')
+    else:
+        with open(join_config_file, 'r') as f:
+            config = json.load(f)
+        print(f"Config file provided at {join_config_file} for joining segments and correcting windings.")
 
     SLICE_IMG_DIR = Path(output_dir / 'slice_images')
     SLICE_IMG_DIR.mkdir(parents=True, exist_ok=True)
@@ -612,12 +683,6 @@ def main():
     SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
     ordered_segmentations = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
-
-    with open(output_dir / segmentation_file_name, 'wb') as fseg:
-        pickle.dump(ordered_segmentations, fseg)
-
-    # with open(output_dir / segmentation_file_name, 'rb') as fseg:
-    #     ordered_segmentations = pickle.load(fseg)
     
     for i in ordered_segmentations.keys():
         print(type(ordered_segmentations[i])) # list
@@ -625,17 +690,11 @@ def main():
         print(type(ordered_segmentations[i][0][0])) # point
         break
 
-    ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius)
-
-    # with open(output_dir / segmentation_file_name, 'wb') as fseg:
-    #     pickle.dump(ordered_segmentations, fseg)
+    ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius, config=config)
     
     draw_winding(ordered_segments=ordered_segmentations, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
     ordered_segmentations_cleaned, vu_map = prepare_for_meshify(ordered_segmentations=ordered_segmentations, delta=delta)
-    
-    with open(output_dir / f'ordered_segments_cleaned.pkl', 'wb') as fseg:
-        pickle.dump(ordered_segmentations_cleaned, fseg)
     
     SLICE_GLOBAL_WINDING_CLEANED = Path(output_dir / 'slice_global_winding_cleaned')
     SLICE_GLOBAL_WINDING_CLEANED.mkdir(parents=True, exist_ok=True)
