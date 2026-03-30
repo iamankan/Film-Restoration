@@ -104,8 +104,19 @@ echo "Output Directory: $OUTPUT_DIR_BASE"
 echo "Write VCPS: $WRITE_VCPS"
 echo "--------------------------------------------------------"
 
-START_NUM=$(basename "$START_SLICE_NAME" .tif)
-END_NUM=$(basename "$END_SLICE_NAME" .tif)
+# 1. Get the raw string first
+START_STR=$(basename "$START_SLICE_NAME" .tif)
+END_STR=$(basename "$END_SLICE_NAME" .tif)
+
+# 2. Determine the padding length (e.g., "0000" is 4 characters)
+PADDING=${#START_STR}
+
+# 3. Convert to base-10 numbers for the math loop
+# The 10# prefix prevents "Illegal number" errors with 0008 or 0009
+START_NUM=$((10#$START_STR))
+END_NUM=$((10#$END_STR))
+
+echo "Detected padding length: $PADDING"
 
 # Safety check: ensure we actually got numbers
 if [[ -z "$START_NUM" || -z "$END_NUM" ]]; then
@@ -121,7 +132,8 @@ echo "--------------------------------------------------------"
 
 
 for (( i=$START_NUM; i<=$END_NUM; i+=$STEP_SIZE )); do
-    CURRENT_SLICE=$(printf "%d.tif" $i)
+    # CURRENT_SLICE=$(printf "%d.tif" $i)
+    CURRENT_SLICE=$(printf "%0${PADDING}d.tif" $i)
 
 
     OUTPUT_DIR="$OUTPUT_DIR_BASE/${VOLUME_ID}_${CURRENT_SLICE}"
