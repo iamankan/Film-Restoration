@@ -552,42 +552,22 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
             curr_left_idx = curr_mid_idx - delta
             curr_right_idx = curr_mid_idx + delta
         
+        
+
         # populate the right side of uv map
-        for prev_u_right in prev_right_list:
-            _, prev_right_ordered_segmentation_idx, _ = vu_map[prev_z_idx][prev_u_right]
-            prev_right_coord = ordered_segmentations[prev_z_value][int(prev_right_ordered_segmentation_idx)].get_point()
-            _, curr_right_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_right_coord[0], prev_right_coord[1]], k=1)
-            if int(curr_right_ordered_Segmentation_idx) == curr_n: 
-                # if the segmentation index have hit the ends of the segmentation
-                break
-            vu_map[curr_z_idx][prev_u_right] = (curr_z_value, int(curr_right_ordered_Segmentation_idx), curr_pointset[int(curr_right_ordered_Segmentation_idx)].get_point())
-            ordered_segmentations[prev_z_value][int(prev_right_ordered_segmentation_idx)].set_used_down(True)
-            ordered_segmentations[curr_z_value][int(curr_right_ordered_Segmentation_idx)].set_used_up(True)
+        u = 1
+        while curr_right_idx < curr_n - 1:
+            vu_map[curr_z_idx][u] = (curr_z_value, int(curr_right_idx), curr_pointset[int(curr_right_idx)].get_point())
+            curr_right_idx += delta
+            u += 1
         
         # populate the left side of the uv map
-        for prev_u_left in prev_left_list:
-            _, prev_left_ordered_segmentation_idx, _ = vu_map[prev_z_idx][prev_u_left]
-            prev_left_coord = ordered_segmentations[prev_z_value][int(prev_left_ordered_segmentation_idx)].get_point()
-            _, curr_left_ordered_Segmentation_idx = curr_kd_tree.query(x=[prev_left_coord[0], prev_left_coord[1]], k=1)
-            if int(curr_left_ordered_Segmentation_idx) == 0:
-                # if the segmentation index have hit the ends of the segmentation
-                break
-            vu_map[curr_z_idx][prev_u_left] = (curr_z_value, int(curr_left_ordered_Segmentation_idx), curr_pointset[int(curr_left_ordered_Segmentation_idx)].get_point())
-            ordered_segmentations[prev_z_value][int(prev_left_ordered_segmentation_idx)].set_used_down(True)
-            ordered_segmentations[curr_z_value][int(curr_left_ordered_Segmentation_idx)].set_used_up(True)
-        
-    # clean up the ordered segmentations
-    # for z_value in z_values:
-    #     print(f'Cleaning slice# {z_value}')
-    #     ordered_pointset = ordered_segmentations[z_value].get_pointset()
-    #     print(f'Type of ordered_pointset: {type(ordered_pointset)}')
-    #     unused_point_indices = []
-    #     for i, pt in enumerate(ordered_pointset):
-    #         if pt.used_down == False and pt.used_up == False:
-    #             unused_point_indices.append(i)
-    #     ordered_pointset_cleaned = [p for i, p in enumerate(ordered_pointset) if i not in unused_point_indices]
-    #     ordered_segmentations[z_value] = ordered_pointset_cleaned
-    #     print(f'Number of points after cleaning: {len(ordered_segmentations[z_value])}')
+        u = -1
+        while curr_left_idx >= 0:
+            vu_map[curr_z_idx][u] = (curr_z_value, int(curr_left_idx), curr_pointset[int(curr_left_idx)].get_point())
+            curr_left_idx -= delta
+            u -= 1
+            
     
     return ordered_segmentations, vu_map
 
