@@ -634,54 +634,55 @@ def parse_arguments():
 
 
 def main():
-    args = parse_arguments()
-    input_dir = args.input_dir
-    output_dir = args.output_dir
-    segmentation_file_name = args.segmentation_file_name
-    mesh_file_name = args.mesh_file_name
-    mesh_output_dir = args.mesh_output_dir
-    mesh_output_dir = mesh_output_dir if mesh_output_dir else output_dir
-    delta = args.delta
-    b = args.b
-    window = args.window
-    search_radius = args.search_radius
-    join_config_file = args.join_config_file
-    if join_config_file is None:
-        config=None
-        print(f'No config files provided for joining segments.')
-    else:
-        with open(join_config_file, 'r') as f:
-            config = json.load(f)
-        print(f"Config file provided at {join_config_file} for joining segments and correcting windings.")
+    test_delaunay()
+    # args = parse_arguments()
+    # input_dir = args.input_dir
+    # output_dir = args.output_dir
+    # segmentation_file_name = args.segmentation_file_name
+    # mesh_file_name = args.mesh_file_name
+    # mesh_output_dir = args.mesh_output_dir
+    # mesh_output_dir = mesh_output_dir if mesh_output_dir else output_dir
+    # delta = args.delta
+    # b = args.b
+    # window = args.window
+    # search_radius = args.search_radius
+    # join_config_file = args.join_config_file
+    # if join_config_file is None:
+    #     config=None
+    #     print(f'No config files provided for joining segments.')
+    # else:
+    #     with open(join_config_file, 'r') as f:
+    #         config = json.load(f)
+    #     print(f"Config file provided at {join_config_file} for joining segments and correcting windings.")
 
-    SLICE_IMG_DIR = Path(output_dir / 'slice_images')
-    SLICE_IMG_DIR.mkdir(parents=True, exist_ok=True)
+    # SLICE_IMG_DIR = Path(output_dir / 'slice_images')
+    # SLICE_IMG_DIR.mkdir(parents=True, exist_ok=True)
 
-    SLICE_WINDING_DIR = Path(output_dir / 'slice_winding_images')
-    SLICE_WINDING_DIR.mkdir(parents=True, exist_ok=True)
+    # SLICE_WINDING_DIR = Path(output_dir / 'slice_winding_images')
+    # SLICE_WINDING_DIR.mkdir(parents=True, exist_ok=True)
 
-    SLICE_SEGMENTATION_DIR = Path(output_dir / 'slice_segmentation_images')
-    SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
+    # SLICE_SEGMENTATION_DIR = Path(output_dir / 'slice_segmentation_images')
+    # SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
-    ordered_segmentations = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
+    # ordered_segmentations = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
     
-    for i in ordered_segmentations.keys():
-        print(type(ordered_segmentations[i])) # list
-        print(type(ordered_segmentations[i][0])) # pointset
-        print(type(ordered_segmentations[i][0][0])) # point
-        break
+    # for i in ordered_segmentations.keys():
+    #     print(type(ordered_segmentations[i])) # list
+    #     print(type(ordered_segmentations[i][0])) # pointset
+    #     print(type(ordered_segmentations[i][0][0])) # point
+    #     break
 
-    ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius, config=config)
+    # ordered_segmentations = process_segments(ordered_segmentations=ordered_segmentations, b=b, window=window, search_radius=search_radius, config=config)
     
-    draw_winding(ordered_segments=ordered_segmentations, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
+    # draw_winding(ordered_segments=ordered_segmentations, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
-    ordered_segmentations_cleaned, vu_map = prepare_for_meshify(ordered_segmentations=ordered_segmentations, delta=delta)
+    # ordered_segmentations_cleaned, vu_map = prepare_for_meshify(ordered_segmentations=ordered_segmentations, delta=delta)
     
-    SLICE_GLOBAL_WINDING_CLEANED = Path(output_dir / 'slice_global_winding_cleaned')
-    SLICE_GLOBAL_WINDING_CLEANED.mkdir(parents=True, exist_ok=True)
-    draw_winding(ordered_segments=ordered_segmentations_cleaned, slice_winding_dir=SLICE_GLOBAL_WINDING_CLEANED, slice_img_dir=SLICE_IMG_DIR)
+    # SLICE_GLOBAL_WINDING_CLEANED = Path(output_dir / 'slice_global_winding_cleaned')
+    # SLICE_GLOBAL_WINDING_CLEANED.mkdir(parents=True, exist_ok=True)
+    # draw_winding(ordered_segments=ordered_segmentations_cleaned, slice_winding_dir=SLICE_GLOBAL_WINDING_CLEANED, slice_img_dir=SLICE_IMG_DIR)
 
-    meshify(ordered_segmentations_cleaned=ordered_segmentations_cleaned, vu_map=vu_map, mesh_file=Path(mesh_output_dir / mesh_file_name))
+    # meshify(ordered_segmentations_cleaned=ordered_segmentations_cleaned, vu_map=vu_map, mesh_file=Path(mesh_output_dir / mesh_file_name))
 
 
 
