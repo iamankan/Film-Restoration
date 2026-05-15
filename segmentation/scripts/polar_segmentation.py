@@ -70,6 +70,34 @@ class Segment:
         self._winding = None
         self.in_idx = None
         self.out_idx = None
+        self._avg_rad = None
+        self._start_rad = None
+        self._end_rad = None
+        self._combined_score = None
+    
+    def get_combined_score(self)->float:
+        return self._combined_score
+    
+    def set_combined_score(self, combined_score:float):
+        self._combined_score = combined_score
+
+    def get_avg_rad(self)->float:
+        return self._avg_rad
+    
+    def set_avg_rad(self, avg_rad:float):
+        self._avg_rad = avg_rad
+
+    def get_start_rad(self)->float:
+        return self._start_rad
+    
+    def set_start_rad(self, start_rad:float):
+        self._start_rad = start_rad
+
+    def get_end_rad(self)->float:
+        return self._end_rad
+    
+    def set_end_rad(self, end_rad:float):
+        self._end_rad = end_rad
 
     def get_winding(self):
         return self._winding
@@ -84,26 +112,26 @@ class Segment:
     def get_z_value(self)->int:
         return self._z_value
     
-    def get_point_at(self, idx)->np.array:
+    def get_point_at(self, idx)->Point:
         return self._all_points[idx].get_point()
     
     def get_len(self)->int:
         return self._all_points.shape[0]
     
-    def get_segment(self)->np.array:
-        return self._all_points
+    def get_segment(self)->list[Point]:
+        return self._all_points.astype(list)
     
     def reverse(self)->None:
         print(f'Reversing Segment!')
         self._all_points = np.flip(self._all_points, axis=0)
 
-    def get_start_point(self)->np.array:
+    def get_start_point(self)->Point:
         return self._all_points[0]
     
-    def get_end_point(self)->np.array:
+    def get_end_point(self)->Point:
         return self._all_points[-1]
     
-    def get_centroid(self)->np.array:
+    def get_centroid(self)->Point:
         return np.mean(self._all_points, axis=0)
 
 
@@ -220,6 +248,50 @@ def fix_winding(volume:Volume, target_winding:str)->Volume:
     return volume
 
 
+def radial_sorting(volume:Volume)->Volume:
+    print(f'Radial sorting')
+    all_slices = volume.get_all_slices()
+    for slc in all_slices:
+        all_segs = slc.get_all_segments()
+        k=0.8
+        for seg in all_segs:
+            pts = seg.get_segment()
+            rad = np.array([p.get_polar()[0] for p in pts])
+            theta = np.array([p.get_polar()[1] for p in pts])
+            avg_theta = np.mean(theta)
+            avg_rad = np.mean(rad)
+            seg.set_combined_score(combined_score=seg.get_start_point().get_polar()[1] + seg.get_end_point().get_polar()[0])
+            seg.set_avg_rad(avg_rad=avg_rad)
+            seg.set_start_rad(start_rad=seg.get_start_point().get_polar()[0])
+            seg.set_end_rad(end_rad=seg.get_end_point().get_polar()[0])
+            print(f'Seg#{seg.get_seg_idx()}, avg-rad: {seg.get_avg_rad()}, start-rad: {seg.get_start_rad()}, end-rad: {seg.get_end_rad()}, combined-score: {seg.get_combined_score}')
+    return volume
+
+def save_radial(volume: Volume, slice_rad_dir: Path, slice_img_dir: Path):
+    all_slices = volume.get_all_slices()
+    vol_cg = volume.get_centroid().get_point()
+    for slc in all_slices:
+        dest_fname = f'{slice_rad_dir}/{slc.get_z_value():04d}.jpg'
+        original_fname = f'{slice_img_dir}/{slc.get_z_value():04d}.jpg'
+        img = iio.imread(original_fname)
+        rad_map = {}
+        for seg in slc.get_all_segments():
+            rad_map[seg.get_seg_idx()] = seg.get_combined_score()
+        print(f'avg_rad_map: {rad_map}')
+        sorted_rad_idx = sorted(rad_map, key=rad_map.get)
+        print(f'sorted_rad_idx: {sorted_rad_idx}')
+        n = len(sorted_rad_idx)
+        for i, seg_idx in enumerate(sorted_rad_idx):
+            seg = slc.get_segment_at(idx=seg_idx)
+            color = (0, 255 * (1 - (i/(n-1))), 255 * (i/(n-1)))
+            seg_pts = seg.get_segment()
+            for pt in seg_pts:
+                p = pt.get_point()
+                cv2.circle(img, (int(p[0]),int(p[1])), 2, color, 2)
+            cv2.imwrite(f'{slice_rad_dir}/{slc.get_z_value():04d}_serial_{i}.jpg', img)
+        cv2.imwrite(dest_fname, img)
+
+
 
 def read_segmentation_file(coord_file:Path, seg_idx:int, z_value: int):
     coordinates = []
@@ -285,6 +357,9 @@ def main():
     SLICE_SEGMENTATION_DIR = Path(output_dir / 'slice_segmentation_images')
     SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
+    SLICE_RADIAL_DIR = Path(output_dir / 'slice_radial_images')
+    SLICE_RADIAL_DIR.mkdir(parents=True, exist_ok=True)
+
     full_volume = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
 
     det_vol = determine_winding(volume=full_volume)
@@ -292,6 +367,11 @@ def main():
     fixed_vol = fix_winding(volume=det_vol, target_winding='+')
 
     save_winding(volume=fixed_vol, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
+
+    rad_vol = radial_sorting(volume=fixed_vol)
+
+    save_radial(volume=rad_vol, slice_rad_dir=SLICE_RADIAL_DIR, slice_img_dir=SLICE_IMG_DIR)
+
 
 if __name__ == "__main__":
     main()
