@@ -185,25 +185,6 @@ def read_coordinates(coord_file, z_value)->Pointset:
     return Pointset(coordinates)
 
 
-def test_delaunay():
-    print("Testing Delanay")
-    arr = np.array([[-3,0], [-2,0], [-1,0], [0,0], [1,0], [2,0], [3,0],
-                                    [-1,1], [0,1], [1,1],
-                                            [0,2], [1,2], [3,2],
-                                    [-1,3], [0,3]
-                    ])
-    tri = Delaunay(arr)
-    filtered_simplices = tri.simplices
-
-    tri_points = arr[tri.simplices]
-    diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
-    mask = diff_y <= 1.0
-    filtered_simplices = tri.simplices[mask]
-
-
-    plt.triplot(arr[:,0], arr[:,1], filtered_simplices)
-    plt.plot(arr[:,0], arr[:,1], 'o')
-    plt.show()
 
 
 def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path):
@@ -583,39 +564,94 @@ def prepare_for_meshify(ordered_segmentations, delta=10):
     
     return ordered_segmentations, vu_map
 
-def perform_delaunay(grid):
-    print("Performing Delanay")
-    tri = Delaunay(grid)
-    filtered_simplices = tri.simplices
+# def perform_delaunay(grid):
+#     print("Performing Delanay")
+#     tri = Delaunay(grid)
+#     filtered_simplices = tri.simplices
 
+#     tri_points = grid[tri.simplices]
+#     diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
+#     mask = diff_y <= 1.0
+#     filtered_simplices = tri.simplices[mask]
+#     # plt.triplot(grid[:,0], grid[:,1], filtered_simplices)
+#     # plt.plot(grid[:,0], grid[:,1], 'o')
+#     # plt.show()
+#     return filtered_simplices
+
+# def meshify(ordered_segmentations_cleaned, vu_map, mesh_file):
+#     print(f'Meshifying using cleaned segments and uv-maps')
+#     v_list = list(vu_map.keys())
+#     grid = []
+#     for v in v_list:
+#         u_list = list(vu_map[v].keys())
+#         for u in u_list:
+#             grid.append([u,v])
+#     grid = np.array(grid)
+#     filtered_simplices = perform_delaunay(grid=grid)
+#     print(f'filtered_simplices: {filtered_simplices}')
+#     flattened_vertices = grid.reshape(-1, 2)
+#     with open(mesh_file, 'w') as fmesh:
+#         for u,v in flattened_vertices:
+#             _,_, vertex = vu_map[v][u]
+#             fmesh.write(f'v {vertex[0]+1} {vertex[1]+1} {vertex[2]+1}\n')
+#         for face in filtered_simplices:
+#             fmesh.write(f'f {face[0]+1} {face[1]+1} {face[2]+1}\n')
+
+def perform_delaunay(grid):
+    # This remains a "dumb" triangulator of the 2D grid
+    print("Performing Delaunay")
+    tri = Delaunay(grid)
+    
+    # Keep your vertical slice filter
     tri_points = grid[tri.simplices]
     diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
     mask = diff_y <= 1.0
-    filtered_simplices = tri.simplices[mask]
-    # plt.triplot(grid[:,0], grid[:,1], filtered_simplices)
-    # plt.plot(grid[:,0], grid[:,1], 'o')
-    # plt.show()
-    return filtered_simplices
+    
+    return tri.simplices[mask]
 
 def meshify(ordered_segmentations_cleaned, vu_map, mesh_file):
     print(f'Meshifying using cleaned segments and uv-maps')
     v_list = list(vu_map.keys())
     grid = []
+    real_vertices = [] # We need these to check the real-world distance
+    
     for v in v_list:
         u_list = list(vu_map[v].keys())
         for u in u_list:
-            grid.append([u,v])
+            grid.append([u, v])
+            _, _, vertex = vu_map[v][u]
+            real_vertices.append(vertex)
+            
     grid = np.array(grid)
-    filtered_simplices = perform_delaunay(grid=grid)
-    print(f'filtered_simplices: {filtered_simplices}')
-    flattened_vertices = grid.reshape(-1, 2)
+    real_vertices = np.array(real_vertices)
+    
+    # 1. Get the triangles from the 2D grid
+    simplices = perform_delaunay(grid=grid)
+    
+    # 2. THE HOLE FILTER: Veto triangles that are too long in 3D
+    # Get the 3D coordinates for the vertices of every triangle
+    p3d = real_vertices[simplices]
+    
+    # Calculate physical distance in 3D (Euclidean)
+    d1 = np.linalg.norm(p3d[:, 0] - p3d[:, 1], axis=1)
+    d2 = np.linalg.norm(p3d[:, 1] - p3d[:, 2], axis=1)
+    d3 = np.linalg.norm(p3d[:, 2] - p3d[:, 0], axis=1)
+    
+    # Threshold: If an edge > 15 units (adjust based on your delta), it's a hole.
+    # This kills the "fanning" you see in your red point-cloud image.
+    threshold = 15.0 
+    dist_mask = (d1 < threshold) & (d2 < threshold) & (d3 < threshold)
+    
+    filtered_simplices = simplices[dist_mask]
+    
+    # 3. Write to .obj
     with open(mesh_file, 'w') as fmesh:
-        for u,v in flattened_vertices:
-            _,_, vertex = vu_map[v][u]
+        for vertex in real_vertices:
+            # Writing real 3D coordinates
             fmesh.write(f'v {vertex[0]+1} {vertex[1]+1} {vertex[2]+1}\n')
         for face in filtered_simplices:
+            # face indices are already aligned with real_vertices order
             fmesh.write(f'f {face[0]+1} {face[1]+1} {face[2]+1}\n')
-
 
 
 
@@ -644,6 +680,67 @@ def parse_arguments():
 
     return parser.parse_args()
 
+
+def generate_mesh_with_hole(width=8, height=6, hole_radius=1.2):
+    points = []
+    
+    # 1. Create the outer rectangular grid
+    x_range = np.linspace(-width/2, width/2, 25)
+    y_range = np.linspace(-height, 0, 15)
+    
+    for y in y_range:
+        for x in x_range:
+            # Only add point if it is outside the circular hole
+            # We center the hole at (0, -height/2)
+            dist_to_center = np.sqrt(x**2 + (y + height/2)**2)
+            if dist_to_center > hole_radius * 1.1:
+                points.append([x, y])
+
+    # 2. Create the inner circular boundary points (the "rim" of the hole)
+    num_circle_points = 40
+    angles = np.linspace(0, 2 * np.pi, num_circle_points, endpoint=False)
+    for theta in angles:
+        cx = hole_radius * np.cos(theta)
+        cy = (hole_radius * np.sin(theta)) - height/2
+        points.append([cx, cy])
+
+    return np.array(points)
+
+def test_delaunay():
+    print("Testing Delaunay with Hole Filtering")
+    arr = generate_mesh_with_hole()
+    tri = Delaunay(arr)
+    
+    # 1. Get the actual 2D points for every triangle
+    tri_points = arr[tri.simplices]
+    
+    # 2. Condition A: Keep triangles that stay within a single slice (your existing logic)
+    diff_y = np.max(tri_points[:, :, 1], axis=1) - np.min(tri_points[:, :, 1], axis=1)
+    mask_y = diff_y <= 1.0
+    
+    # 3. Condition B: Remove triangles whose center is inside the hole
+    # We calculate the average (mean) x and y for each triangle
+    centers = np.mean(tri_points, axis=1)
+    
+    # Define your hole parameters (must match generate_mesh_with_hole)
+    hole_center = np.array([0, -3])
+    hole_radius = 1.2
+    
+    # Calculate distance from each triangle center to the hole center
+    dist_to_hole = np.linalg.norm(centers - hole_center, axis=1)
+    mask_hole = dist_to_hole > (hole_radius * 0.9) # Keep if outside radius
+    
+    # 4. Combine masks: Must satisfy BOTH conditions
+    final_mask = mask_y & mask_hole
+    filtered_simplices = tri.simplices[final_mask]
+
+    # Plotting
+    plt.figure(figsize=(10, 6))
+    plt.triplot(arr[:, 0], arr[:, 1], filtered_simplices, color='tab:blue', lw=1)
+    plt.plot(arr[:, 0], arr[:, 1], 'o', color='tab:green', markersize=4)
+    plt.axis('equal')
+    plt.title("Fixed Delaunay: Vertical & Centroid Filtering")
+    plt.show()
 
 def main():
     # test_delaunay()
