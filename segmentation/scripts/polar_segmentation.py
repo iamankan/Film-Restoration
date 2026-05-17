@@ -5,6 +5,12 @@ from natsort import natsorted
 import shutil
 import numpy as np
 import cv2
+from scipy.spatial import KDTree
+import json
+import pickle
+from scipy.spatial import Delaunay
+from tqdm import tqdm
+
 
 class Point:
     def __init__(self, x:float, y:float, z:int):
@@ -68,37 +74,7 @@ class Segment:
         self._idx = idx
         self._z_value = z_value
         self._winding = None
-        self.in_idx = None
-        self.out_idx = None
-        self._avg_rad = None
-        self._start_rad = None
-        self._end_rad = None
-        self._combined_score = None
     
-    def get_combined_score(self)->float:
-        return self._combined_score
-    
-    def set_combined_score(self, combined_score:float):
-        self._combined_score = combined_score
-
-    def get_avg_rad(self)->float:
-        return self._avg_rad
-    
-    def set_avg_rad(self, avg_rad:float):
-        self._avg_rad = avg_rad
-
-    def get_start_rad(self)->float:
-        return self._start_rad
-    
-    def set_start_rad(self, start_rad:float):
-        self._start_rad = start_rad
-
-    def get_end_rad(self)->float:
-        return self._end_rad
-    
-    def set_end_rad(self, end_rad:float):
-        self._end_rad = end_rad
-
     def get_winding(self):
         return self._winding
     
@@ -136,10 +112,35 @@ class Segment:
 
 
 class Slice:
-    def __init__(self, z_value:int, all_segments:list[Segment]):
+    def __init__(self, z_value:int, idx:int, all_segments:list[Segment]):
         self._z_value = z_value
         self._all_segments = all_segments
+        self._kd_tree = None
+        self._kd_metadata = []
+        self._idx = idx
+
+    def _build_kd_tree(self):
+        # Building the data and the metadata
+        _kd_data = []
+        self._kd_metadata = []
+        for _segment in self._all_segments:
+            _seg_idx = _segment.get_seg_idx()
+            for _point_idx, _point in enumerate(_segment.get_segment()):
+                _point_np = _point.get_point()
+                _kd_data.append(_point_np)
+                self._kd_metadata.append({
+                    'slice':self, 
+                    'seg_idx':_seg_idx, 
+                    'point_idx':_point_idx, 
+                    'point':_point
+                })
+        self._kd_tree = KDTree(data=_kd_data)
     
+    def get_kd_tree(self, force_build:bool=False):
+        if not self._kd_tree or force_build:
+            self._build_kd_tree()
+        return self._kd_tree, self._kd_metadata
+
     def get_total_segments(self) -> int:
         return len(self._all_segments)
     
@@ -151,6 +152,9 @@ class Slice:
     
     def get_z_value(self)->int:
         return self._z_value
+    
+    def get_idx(self):
+        return self._idx
     
     def get_all_segments(self)->list[Segment]:
         return self._all_segments
@@ -177,6 +181,52 @@ class Volume:
     def get_centroid(self)->np.array:
         _centroid = [slc.get_centroid() for slc in self._all_slices]
         return np.mean(np.array(_centroid), axis=0)
+
+def align_segments(volume: Volume):
+    _mesh_map = {}
+    all_slices = volume.get_all_slices()
+    slc_idx_list = [slc.get_idx() for slc in all_slices]
+
+    curr_slc_idx = slc_idx_list[0]
+
+    for next_slc_idx in slc_idx_list[1:]:
+        _mesh_map[curr_slc_idx] = {}
+        print(
+            f"Current slice idx: {curr_slc_idx}, next slice idx: {next_slc_idx}"
+        )
+
+        curr_slc = volume.get_slice_at(curr_slc_idx)
+        next_slc = volume.get_slice_at(next_slc_idx)
+        
+        curr_slc_kd_tree, curr_slc_metadata = curr_slc.get_kd_tree()
+        next_slc_kd_tree, next_slc_metadata = next_slc.get_kd_tree()
+
+        for curr_seg in curr_slc.get_all_segments():
+            _mesh_map[curr_slc_idx][curr_seg.get_seg_idx()] = []
+        results = curr_slc_kd_tree.query_ball_tree(next_slc_kd_tree, r=1)
+
+        for curr_tree_idx, next_tree_indices in enumerate(results):
+            if not next_tree_indices:
+                continue
+            curr_meta = curr_slc_metadata[curr_tree_idx]
+            curr_seg_idx = curr_meta["seg_idx"]
+            curr_point_obj = curr_meta["point"]
+            left_side = [curr_slc_idx, curr_point_obj, curr_seg_idx]
+
+            for next_tree_idx in next_tree_indices:
+                next_meta = next_slc_metadata[next_tree_idx]
+
+                right_side = [
+                    next_slc_idx,
+                    next_meta["point"],
+                    next_meta["seg_idx"]
+                ]
+                point_pair = [left_side, right_side]
+                _mesh_map[curr_slc_idx][curr_seg_idx].append(point_pair)
+
+        curr_slc_idx = next_slc_idx
+    return _mesh_map
+
 
 
 def save_winding(volume: Volume, slice_winding_dir: Path, slice_img_dir: Path):
@@ -248,49 +298,99 @@ def fix_winding(volume:Volume, target_winding:str)->Volume:
     return volume
 
 
-def radial_sorting(volume:Volume)->Volume:
-    print(f'Radial sorting')
-    all_slices = volume.get_all_slices()
-    for slc in all_slices:
-        all_segs = slc.get_all_segments()
-        k=0.8
-        for seg in all_segs:
-            pts = seg.get_segment()
-            rad = np.array([p.get_polar()[0] for p in pts])
-            theta = np.array([p.get_polar()[1] for p in pts])
-            avg_theta = np.mean(theta)
-            avg_rad = np.mean(rad)
-            seg.set_combined_score(combined_score=seg.get_start_point().get_polar()[1] + seg.get_end_point().get_polar()[0])
-            seg.set_avg_rad(avg_rad=avg_rad)
-            seg.set_start_rad(start_rad=seg.get_start_point().get_polar()[0])
-            seg.set_end_rad(end_rad=seg.get_end_point().get_polar()[0])
-            print(f'Seg#{seg.get_seg_idx()}, avg-rad: {seg.get_avg_rad()}, start-rad: {seg.get_start_rad()}, end-rad: {seg.get_end_rad()}, combined-score: {seg.get_combined_score}')
-    return volume
+def export_mesh_map_to_obj(mesh_map, output_filepath):
+    global_vertex_counter = 1  # OBJ files use 1-based indexing for faces
 
-def save_radial(volume: Volume, slice_rad_dir: Path, slice_img_dir: Path):
-    all_slices = volume.get_all_slices()
-    vol_cg = volume.get_centroid().get_point()
-    for slc in all_slices:
-        dest_fname = f'{slice_rad_dir}/{slc.get_z_value():04d}.jpg'
-        original_fname = f'{slice_img_dir}/{slc.get_z_value():04d}.jpg'
-        img = iio.imread(original_fname)
-        rad_map = {}
-        for seg in slc.get_all_segments():
-            rad_map[seg.get_seg_idx()] = seg.get_combined_score()
-        print(f'avg_rad_map: {rad_map}')
-        sorted_rad_idx = sorted(rad_map, key=rad_map.get)
-        print(f'sorted_rad_idx: {sorted_rad_idx}')
-        n = len(sorted_rad_idx)
-        for i, seg_idx in enumerate(sorted_rad_idx):
-            seg = slc.get_segment_at(idx=seg_idx)
-            color = (0, 255 * (1 - (i/(n-1))), 255 * (i/(n-1)))
-            seg_pts = seg.get_segment()
-            for pt in seg_pts:
-                p = pt.get_point()
-                cv2.circle(img, (int(p[0]),int(p[1])), 2, color, 2)
-            cv2.imwrite(f'{slice_rad_dir}/{slc.get_z_value():04d}_serial_{i}.jpg', img)
-        cv2.imwrite(dest_fname, img)
+    with open(output_filepath, "w") as obj_file:
+        # Write a simple header
+        obj_file.write("# Generated Alignment Mesh\n")
+        obj_file.write(f"# Target: {output_filepath}\n\n")
 
+        # Wrap the slice loop in tqdm to monitor the progress across all layers
+        for curr_slc_idx, segments in tqdm(
+            mesh_map.items(), desc="Exporting OBJ Mesh", unit="slice"
+        ):
+
+            for seg_idx, point_pairs in segments.items():
+                if not point_pairs:
+                    continue
+
+                obj_file.write(
+                    f"g slice_{curr_slc_idx}_segment_{seg_idx}\n"
+                )
+
+                points_2d = []
+                mapping_3d = []
+                seen_points = {}
+
+                # 1. Build a quick lookup map to get a point's index within its segment.
+                first_pair = point_pairs[0]
+                left_sample_point = first_pair[0][1]
+                right_sample_point = first_pair[1][1]
+
+                l_slice_obj = point_pairs[0][0][1]
+
+                left_points_seen = {}
+                right_points_seen = {}
+
+                for left_side, right_side in point_pairs:
+                    l_slc, l_point_obj, l_seg_idx = left_side
+                    r_slc, r_point_obj, r_seg_idx = right_side
+
+                    l_id = id(l_point_obj)
+                    if l_id not in left_points_seen:
+                        left_points_seen[l_id] = len(left_points_seen)
+
+                    r_id = id(r_point_obj)
+                    if r_id not in right_points_seen:
+                        right_points_seen[r_id] = len(right_points_seen)
+
+                    l_idx = left_points_seen[l_id]
+                    r_idx = right_points_seen[r_id]
+
+                    # --- Left side (Slice A, Y=0) ---
+                    l_key = (l_slc, l_idx)
+                    if l_key not in seen_points:
+                        seen_points[l_key] = len(points_2d)
+                        points_2d.append([l_idx, 0])
+                        mapping_3d.append(l_point_obj.get_point())
+
+                    # --- Right side (Slice B, Y=1) ---
+                    r_key = (r_slc, r_idx)
+                    if r_key not in seen_points:
+                        seen_points[r_key] = len(points_2d)
+                        points_2d.append([r_idx, 1])
+                        mapping_3d.append(r_point_obj.get_point())
+
+                if len(points_2d) < 3:
+                    continue
+
+                points_2d_np = np.array(points_2d)
+
+                # 2. Write the 3D Vertices to the file
+                for coords in mapping_3d:
+                    obj_file.write(
+                        f"v {coords[0]:.4f} {coords[1]:.4f} {coords[2]:.4f}\n"
+                    )
+
+                # 3. Compute Delaunay Triangulation in 2D
+                tri = Delaunay(points_2d_np)
+
+                # 4. Write the Faces referencing global indices
+                for simplex in tri.simplices:
+                    global_v1 = simplex[0] + global_vertex_counter
+                    global_v2 = simplex[1] + global_vertex_counter
+                    global_v3 = simplex[2] + global_vertex_counter
+
+                    obj_file.write(f"f {global_v1} {global_v2} {global_v3}\n")
+
+                # 5. Update global counter
+                global_vertex_counter += len(mapping_3d)
+                obj_file.write("\n")
+
+    print(
+        f"\nSuccessfully saved consolidated mesh to {output_filepath} with {global_vertex_counter - 1} vertices!"
+    )
 
 
 def read_segmentation_file(coord_file:Path, seg_idx:int, z_value: int):
@@ -304,7 +404,7 @@ def read_segmentation_file(coord_file:Path, seg_idx:int, z_value: int):
 
 def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path) -> Volume:
     all_slices = []
-    for slice_id in natsorted(input_dir.iterdir()):
+    for slice_idx, slice_id in enumerate(natsorted(input_dir.iterdir())):
         all_segments = []
         z_name = (slice_id.stem).split('_')[1]
         z_value = int(z_name)
@@ -321,7 +421,7 @@ def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path) 
 
         for seg_idx, coord_file in enumerate(all_segmentation_coordinate_files):
             all_segments.append(read_segmentation_file(coord_file=coord_file, seg_idx=seg_idx, z_value=z_value))
-        single_slice = Slice(z_value=z_value, all_segments=all_segments)
+        single_slice = Slice(z_value=z_value, all_segments=all_segments, idx=slice_idx)
         all_slices.append(single_slice)
     
     full_volume = Volume(all_slices=all_slices)
@@ -340,6 +440,38 @@ def parse_arguments():
 
     return args
 
+def make_json_serializable(m_map):
+    serializable_map = {}
+
+    for slc_idx, segments in m_map.items():
+        # JSON keys MUST be strings
+        str_slc_idx = str(slc_idx)
+        serializable_map[str_slc_idx] = {}
+
+        for seg_idx, pairs in segments.items():
+            str_seg_idx = str(seg_idx)
+            serializable_map[str_slc_idx][str_seg_idx] = []
+
+            for left, right in pairs:
+                # Unpack the tuples
+                l_slc, l_point_obj, l_seg = left
+                r_slc, r_point_obj, r_seg = right
+
+                # Extract raw coordinates from Point objects and convert to lists
+                l_coords = l_point_obj.get_point().tolist()
+                r_coords = r_point_obj.get_point().tolist()
+
+                # Rebuild as standard JSON lists
+                serializable_pair = [
+                    [int(l_slc), l_coords, int(l_seg)],
+                    [int(r_slc), r_coords, int(r_seg)],
+                ]
+
+                serializable_map[str_slc_idx][str_seg_idx].append(
+                    serializable_pair
+                )
+
+    return serializable_map
 
 def main():
     args = parse_arguments()
@@ -357,9 +489,6 @@ def main():
     SLICE_SEGMENTATION_DIR = Path(output_dir / 'slice_segmentation_images')
     SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
-    SLICE_RADIAL_DIR = Path(output_dir / 'slice_radial_images')
-    SLICE_RADIAL_DIR.mkdir(parents=True, exist_ok=True)
-
     full_volume = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
 
     det_vol = determine_winding(volume=full_volume)
@@ -368,9 +497,19 @@ def main():
 
     save_winding(volume=fixed_vol, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
-    rad_vol = radial_sorting(volume=fixed_vol)
+    mesh_map = align_segments(volume=fixed_vol)
 
-    save_radial(volume=rad_vol, slice_rad_dir=SLICE_RADIAL_DIR, slice_img_dir=SLICE_IMG_DIR)
+    with open(f'{output_dir}/mesh_map.pkl', 'wb') as fid:
+        pickle.dump(mesh_map, fid)
+
+    json_ready_map = make_json_serializable(mesh_map)
+
+    with open(f"{output_dir}/mesh_map.json", "w") as fid:
+        json.dump(json_ready_map, fid, indent=4)
+    
+    export_mesh_map_to_obj(mesh_map, f'{output_dir}/aligned_volume.obj')
+
+
 
 
 if __name__ == "__main__":

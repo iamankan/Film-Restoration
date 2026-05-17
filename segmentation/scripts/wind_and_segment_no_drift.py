@@ -653,6 +653,25 @@ def meshify(ordered_segmentations_cleaned, vu_map, mesh_file):
             # face indices are already aligned with real_vertices order
             fmesh.write(f'f {face[0]+1} {face[1]+1} {face[2]+1}\n')
 
+# def meshify(ordered_segmentations_cleaned, vu_map, mesh_file):
+#     print(f'Meshifying using cleaned segments and uv-maps')
+#     v_list = list(vu_map.keys())
+#     grid = []
+#     for v in v_list:
+#         u_list = list(vu_map[v].keys())
+#         for u in u_list:
+#             grid.append([u,v])
+#     grid = np.array(grid)
+#     filtered_simplices = perform_delaunay(grid=grid)
+#     print(f'filtered_simplices: {filtered_simplices}')
+#     flattened_vertices = grid.reshape(-1, 2)
+#     with open(mesh_file, 'w') as fmesh:
+#         for u,v in flattened_vertices:
+#             _,_, vertex = vu_map[v][u]
+#             fmesh.write(f'v {vertex[0]+1} {vertex[1]+1} {vertex[2]+1}\n')
+#         for face in filtered_simplices:
+#             fmesh.write(f'f {face[0]+1} {face[1]+1} {face[2]+1}\n')
+
 
 
 
