@@ -14,13 +14,25 @@ from typing import TypedDict
 from matplotlib import pyplot as plt
 import networkx as nx
 import trimesh
-
+import uuid
 
 class Point:
+    _registry = {}
     def __init__(self, x:float, y:float, z:int):
         self._x = x
         self._y = y
         self._z = z
+        self._idx = str(uuid.uuid4())
+
+        Point._registry[self._idx] = self
+    
+    @classmethod
+    def get_by_idx(cls, idx: str):
+        """Look up a point using Point.get_by_idx(idx_string)"""
+        return cls._registry.get(idx)
+    
+    def get_idx(self)->str:
+        return self._idx
 
     def get_point(self) -> np.ndarray:
         return np.array([self._x, self._y, self._z])
@@ -129,13 +141,13 @@ class Slice:
     def _build_kd_tree(self):
         _segmentation_points = []
         for _segment in self._all_segments:
-            for _point_index, _point in enumerate(_segment.get_segment()):
+            for _point in _segment.get_segment():
                 _point_np = _point.get_point()
                 self._kd_metadata.append(
                     {
                         'segmentation_index': _segment.get_seg_idx(),
                         'point': {
-                            'index': _point_index,
+                            'index': _point.get_idx(),
                             'coordinate': _point_np.tolist()
                         }
                     }
@@ -212,6 +224,7 @@ def make_alignment_tree(volume:Volume, kd_match_radius:float|int=1):
     slice_matches = {}
     alignment_tree = {}
     segmentation_tree = {}
+    point_indices_set = set()
     for next_slice in all_slices[1:]:
         print(f'Processing slice {curr_slice_index}/{total_slices-1} for mesh alignment')
         next_slice_index = next_slice.get_idx()
@@ -232,13 +245,18 @@ def make_alignment_tree(volume:Volume, kd_match_radius:float|int=1):
 
             alignment_tree[curr_slice_index][segment_idx].append(
                     {
-                        'from': curr_kd['metadata'][_i]['point'],
+                        'from': {
+                            'segment_index': segment_idx,
+                            'point': curr_kd['metadata'][_i]['point']
+                        },
                         'to': {
                             'segment_index': next_kd['metadata'][_m[0]]['segmentation_index'],
                             'point': next_kd['metadata'][_m[0]]['point']
                         }
                     }
                 )
+            point_indices_set.add(curr_kd['metadata'][_i]['point']['index'])
+            point_indices_set.add(next_kd['metadata'][_m[0]]['point']['index'])
             target_seg_idx[segment_idx].add(next_kd['metadata'][_m[0]]['segmentation_index'])
         segmentation_tree[curr_slice_index] = {key: list(val) for key, val in target_seg_idx.items()}
             
@@ -246,7 +264,7 @@ def make_alignment_tree(volume:Volume, kd_match_radius:float|int=1):
         curr_slice = next_slice
         curr_slice_index = next_slice_index
 
-    return alignment_tree, segmentation_tree
+    return alignment_tree, segmentation_tree, list(point_indices_set)
 
 def make_alignment_tree_query(volume: Volume, kd_match_radius: float|int=1):
     all_slices = volume.get_all_slices()
@@ -258,6 +276,7 @@ def make_alignment_tree_query(volume: Volume, kd_match_radius: float|int=1):
     
     alignment_tree = {}
     segmentation_tree = {}
+    point_indices_set = set()
     
     for next_slice in all_slices[1:]:
         print(f'Processing slice {curr_slice_index}/{total_slices-1} for mesh alignment')
@@ -298,15 +317,20 @@ def make_alignment_tree_query(volume: Volume, kd_match_radius: float|int=1):
                 alignment_tree[curr_slice_index][curr_seg_idx] = []
             if curr_seg_idx not in target_seg_idx_tracker:
                 target_seg_idx_tracker[curr_seg_idx] = set()
-                
-            # Append the confirmed, unique link
+            
             alignment_tree[curr_slice_index][curr_seg_idx].append({
-                'from': curr_meta['point'],
+                'from': {
+                    'segment_index': curr_seg_idx,
+                    'point': curr_meta['point']
+                },
                 'to': {
                     'segment_index': next_seg_idx,
                     'point': matched_target_meta['point']
                 }
             })
+
+            point_indices_set.add(curr_meta['point']['index'])
+            point_indices_set.add(matched_target_meta['point']['index'])
             
             target_seg_idx_tracker[curr_seg_idx].add(next_seg_idx)
             
@@ -318,7 +342,56 @@ def make_alignment_tree_query(volume: Volume, kd_match_radius: float|int=1):
         curr_slice = next_slice
         curr_slice_index = next_slice_index
 
-    return alignment_tree, segmentation_tree
+    return alignment_tree, segmentation_tree, list(point_indices_set)
+
+def make_mesh(alignment_tree, segmentation_tree, point_indices_list):
+    uuid_to_obj_idx = {
+        idx_str: (i + 1) for i, idx_str in enumerate(point_indices_list)
+    }
+
+    global_faces = []
+    
+    all_slice_indices = list(alignment_tree.keys())
+    for curr_slice_index in all_slice_indices:
+        all_segmentation_indices = list(alignment_tree[curr_slice_index].keys())
+        for curr_segmentation_index in all_segmentation_indices:
+            aligned_point_list = alignment_tree[curr_slice_index][curr_segmentation_index]
+            # Check for two-way segmentation A->(B,C)
+            pointing_to = segmentation_tree[curr_slice_index][curr_segmentation_index]
+            for to_seg_idx in pointing_to:
+                _links = {
+                    'uuid_indices':[],
+                    '2d':[]
+                }
+                for _i, link in enumerate(aligned_point_list):
+                    if link['to']['segment_index'] != to_seg_idx:
+                        continue
+
+                    _links['uuid_indices'].append(link['from']['point']['index'])
+                    _links['uuid_indices'].append(link['to']['point']['index'])
+
+                    _links['2d'].append([_i,0])
+                    _links['2d'].append([_i,1])
+                
+                _points = np.array(_links['2d'])
+                # perform Delaunay
+                _tri = Delaunay(_points)
+                _simplices = _tri.simplices
+                print(f'Delaunay done for Slice: {curr_slice_index}, Segment: {curr_segmentation_index}')
+
+                # map back the simplices
+                for _simplice in _simplices:
+                    _a = _links['uuid_indices'][_simplice[0]]
+                    _b = _links['uuid_indices'][_simplice[1]]
+                    _c = _links['uuid_indices'][_simplice[2]]
+
+                    global_faces.append([uuid_to_obj_idx[_a], uuid_to_obj_idx[_b], uuid_to_obj_idx[_c]])
+    
+    return uuid_to_obj_idx, global_faces
+
+
+
+
 
 def save_winding(volume: Volume, slice_winding_dir: Path, slice_img_dir: Path):
     all_slices = volume.get_all_slices()
@@ -435,218 +508,6 @@ def parse_arguments():
 
     return args
 
-def analyze_tree(alignment_tree, segmentation_tree):
-    print(f'Building mesh from alignment tree')
-    print(f'Builfing segmentation tree')
-    coordinates = {
-        'x':[],
-        'y':[],
-        'link':[]
-    }
-
-
-    for y in segmentation_tree.keys():
-        for x in segmentation_tree[y].keys():
-            coordinates['x'].append(x)
-            coordinates['y'].append(y)
-            for l in segmentation_tree[y][x]:
-                coordinates['link'].append({
-                    'from':{
-                        'x':x,
-                        'y':y
-                    },
-                    'to':{
-                        'x':l,
-                        'y':y+1
-                    }
-                })
-    
-    plt.scatter(np.array(coordinates['x']), np.array(coordinates['y']))
-
-    for link in coordinates['link']:
-        x_val = [link['from']['x'], link['to']['x']]
-        y_val = [link['from']['y'], link['to']['y']]
-        plt.plot(x_val, y_val, color='red')
-
-    plt.gca().invert_yaxis()
-    plt.grid(True)
-    plt.show()
-
-    print(f'Tree printed. Now lets use the alignment tree.')
-
-    '''
-        alignment_tree[curr_slice_index][segment_idx].append(
-                        {
-                            'from': curr_kd['metadata'][_i]['point'],
-                            'to': {
-                                'segment_index': next_kd['metadata'][_m[0]]['segmentation_index'],
-                                'point': next_kd['metadata'][_m[0]]['point']
-                            }
-                        }
-                    )
-    '''
-
-    
-
-
-def build_segmented_delaunay_mesh(alignment_tree, max_edge_length=5.0):
-    """
-    Iterates through the alignment tree segment by segment and applies 
-    local 3D Delaunay triangulation to each pairwise connection with full print tracking.
-    """
-    print("\n==================================================")
-    print("STARTING SEGMENTED DELAUNAY MESH GENERATION")
-    print(f"Max edge length threshold: {max_edge_length}")
-    print("==================================================")
-
-    points_list = []
-    point_indices = {}  # Global vertex caching to prevent duplication
-    faces = []
-    
-    total_pairs_processed = 0
-    total_simplices_evaluated = 0
-
-    def get_or_add_point(coord):
-        coord_tuple = (round(coord[0], 4), round(coord[1], 4), round(coord[2], 4))
-        if coord_tuple not in point_indices:
-            point_indices[coord_tuple] = len(points_list)
-            points_list.append(coord)
-        return point_indices[coord_tuple]
-
-    # 1. Group pairs of matched segments layer-by-layer
-    for slice_idx, segments in alignment_tree.items():
-        print(f"\n[Slice {slice_idx}] Found {len(segments)} source segments to evaluate...")
-        
-        for curr_seg_idx, matches in segments.items():
-            if not matches:
-                print(f"  -> Source Seg {curr_seg_idx}: No tracking matches. Skipping.")
-                continue
-            
-            # Sort individual point matches by their targeted destination segments
-            by_target_segment = {}
-            for match in matches:
-                target_seg_idx = match['to']['segment_index']
-                if target_seg_idx not in by_target_segment:
-                    by_target_segment[target_seg_idx] = []
-                by_target_segment[target_seg_idx].append(match)
-
-            # Print tracking for splits/merges (Y-junctions)
-            if len(by_target_segment) > 1:
-                print(f"  -> Source Seg {curr_seg_idx} SPLITS into multiple targets: {list(by_target_segment.keys())}")
-
-            # 2. Process each independent segment-to-segment pair
-            for target_seg_idx, pair_matches in by_target_segment.items():
-                total_pairs_processed += 1
-                local_coords = []
-                local_global_indices = []
-
-                # Collect coordinates forming this unique cross-slice transition
-                for match in pair_matches:
-                    c_from = match['from']['coordinate']
-                    c_to = match['to']['point']['coordinate']
-
-                    # Get or assign global IDs
-                    idx_from = get_or_add_point(c_from)
-                    idx_to = get_or_add_point(c_to)
-
-                    local_coords.append(c_from)
-                    local_global_indices.append(idx_from)
-                    
-                    local_coords.append(c_to)
-                    local_global_indices.append(idx_to)
-
-                # Delaunay requires at least 4 non-coplanar points to make 3D tetrahedrons
-                if len(local_coords) < 4:
-                    print(f"    - Connection ({curr_seg_idx} -> {target_seg_idx}): Insufficient points ({len(local_coords)}). Skipping triangulation.")
-                    continue
-
-                local_coords = np.array(local_coords)
-                initial_face_count = len(faces)
-                
-                try:
-                    # 3. Compute local 3D Delaunay
-                    local_delaunay = Delaunay(local_coords)
-                    pair_simplices_count = len(local_delaunay.simplices)
-                    total_simplices_evaluated += pair_simplices_count
-                    
-                    # Extract triangular faces from generated tetrahedrons
-                    for simplex in local_delaunay.simplices:
-                        tetra_faces = [
-                            [simplex[0], simplex[1], simplex[2]],
-                            [simplex[0], simplex[1], simplex[3]],
-                            [simplex[0], simplex[2], simplex[3]],
-                            [simplex[1], simplex[2], simplex[3]]
-                        ]
-                        
-                        for f in tetra_faces:
-                            g_face = [local_global_indices[f[0]], local_global_indices[f[1]], local_global_indices[f[2]]]
-                            
-                            # Skip degenerate triangles
-                            if len(set(g_face)) < 3:
-                                continue
-                                
-                            # Calculate physical edge lengths to filter out internal webbing
-                            p0 = np.array(points_list[g_face[0]])
-                            p1 = np.array(points_list[g_face[1]])
-                            p2 = np.array(points_list[g_face[2]])
-                            
-                            edge1 = np.linalg.norm(p1 - p0)
-                            edge2 = np.linalg.norm(p2 - p1)
-                            edge3 = np.linalg.norm(p0 - p2)
-                            
-                            # Discard triangle if it cuts across the hollow interior core
-                            if edge1 > max_edge_length or edge2 > max_edge_length or edge3 > max_edge_length:
-                                continue
-                                
-                            faces.append(g_face)
-                    
-                    faces_added = len(faces) - initial_face_count
-                    print(f"    - Connection ({curr_seg_idx} -> {target_seg_idx}): Extracted {pair_simplices_count} tets -> Generated {faces_added} valid surface triangles.")
-                            
-                except Exception as e:
-                    print(f"    - Connection ({curr_seg_idx} -> {target_seg_idx}): Skipping due to coplanar/mathematical layout layout: {e}")
-                    continue
-
-    vertices = np.array(points_list)
-    faces = np.array(faces)
-
-    print("\n==================================================")
-    print("DELAUNAY PROCESSING SUMMARY")
-    print("==================================================")
-    print(f"Total segment-to-segment pairs computed: {total_pairs_processed}")
-    print(f"Total raw 3D tetrahedrons evaluated    : {total_simplices_evaluated}")
-    print(f"Final global unique vertex pool size    : {len(vertices)}")
-    print(f"Final global surface triangles retained : {len(faces)}")
-    print("==================================================\n")
-
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
-
-def clean_mesh(my_mesh_path:Path, clean_mesh_path:Path):
-    print("==================================================")
-    print("PROCESSING NORMALS AND FACE CLEANUP")
-    print("==================================================")
-    
-    # process=True merges the duplicate vertices so trimesh can calculate continuity
-    mesh = trimesh.load_mesh(my_mesh_path, process=True)
-    print(f"Original face count: {len(mesh.faces)}")
-
-    # 1. Strip out the internal tetrahedral faces, keeping only the external skin
-    print("Extracting surface skin...")
-    cleaned_mesh = mesh.unwrap()
-
-    # 2. Forcibly unify the winding order so ALL faces point outward
-    print("Fixing face directions (normals)...")
-    trimesh.repair.fix_normals(cleaned_mesh)
-    
-    # 3. Double-check that invert/backfaces are corrected
-    cleaned_mesh.fix_normals()
-
-    print(f"Cleaned face count: {len(cleaned_mesh.faces)}")
-    
-    # Save it back
-    cleaned_mesh.export(clean_mesh_path)
-    print(f"Saved optimized, uniformly oriented mesh to: {clean_mesh_path}")
-    print("==================================================\n")
 
 def main():
     args = parse_arguments()
@@ -672,37 +533,29 @@ def main():
 
     save_winding(volume=fixed_vol, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
-    alignment_tree, segmentation_tree = make_alignment_tree_query(volume=fixed_vol, kd_match_radius=1)
+    alignment_tree, segmentation_tree, point_indices_list = make_alignment_tree_query(volume=fixed_vol, kd_match_radius=1)
 
-    with open(f'{output_dir}/segmentation_tree.json','w') as f:
-        json.dump(segmentation_tree, f)
+    uuid_to_obj_idx, global_faces = make_mesh(alignment_tree=alignment_tree, segmentation_tree=segmentation_tree, point_indices_list=point_indices_list)
 
-    analyze_tree(alignment_tree=alignment_tree, segmentation_tree=segmentation_tree)
+    sorted_uuids = sorted(uuid_to_obj_idx, key=uuid_to_obj_idx.get)
+
+    with open(f'{output_dir}/mesh.obj', 'w') as fmesh:
+        for _point_uuid in sorted_uuids:
+            _point = Point.get_by_idx(idx=_point_uuid)
+            _point_np = _point.get_point().tolist()
+            fmesh.write(f'v {_point_np[0]} {_point_np[1]} {_point_np[2]}\n')
+        
+        for _face in global_faces:
+            fmesh.write(f'f {_face[0]} {_face[1]} {_face[2]}\n')
+        
+        print(f'Finished writing mesh.obj file!')
+
     
-    mesh = build_manifold_segmented_mesh(alignment_tree=alignment_tree)
-    mesh_out_path = f'{output_dir}/non_manifold_delaunay_tree.obj'
-    mesh.export(mesh_out_path)
+    Point._registry.clear()
 
-    clean_mesh = fix_boundary_manifold_edges(my_mesh_path=mesh_out_path)
-    mesh_out_path = f'{output_dir}/non_manifold_delaunay_tree_clean.obj'
-    mesh.export(clean_mesh)
+
+
     
-    # delaunay_mesh = build_segmented_delaunay_mesh(
-    #     alignment_tree=alignment_tree, 
-    #     max_edge_length=5.0
-    # )
-    
-    # # 3. Export the mesh to a standard Wavefront OBJ file
-    # mesh_out_path = f'{output_dir}/non_manifold_delaunay_tree.obj'
-    # delaunay_mesh.export(mesh_out_path)
-    
-    # print(f"--- Process Complete ---")
-    # print(f"Clean non-manifold mesh successfully saved to: {mesh_out_path}")
-    # clean_mesh(my_mesh_path=Path(mesh_out_path), clean_mesh_path=Path(f'{output_dir}/non_manifold_delaunay_tree_cleaned.obj'))
-
-   
-
-
     
 
 if __name__ == "__main__":
