@@ -501,8 +501,12 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     file_group = parser.add_argument_group(title="File I/O handler")
-    file_group.add_argument('--input-dir', help="Input directory that has the segmentation files", required=True, type=Path)
-    file_group.add_argument('--output-dir', help="Output directory that will have all the files", required=True, type=Path)
+    file_group.add_argument('-i', '--input-dir', help="Input directory that has the segmentation files", required=True, type=Path)
+    file_group.add_argument('-o', '--output-dir', help="Output directory that will have all the files", required=True, type=Path)
+    
+    mesh_group = parser.add_argument_group(title="Mesh parameter handler")
+    mesh_group.add_argument('-r','--kd-match-radius', help="Radius for KD-Tree for matching segments", required=False, type=float, default=1.0)
+    mesh_group.add_argument('-m','--output-mesh-path', help="Output mesh filename", required=False, type=Path, default='mesh.obj')
 
     args = parser.parse_args()
 
@@ -514,6 +518,8 @@ def main():
     input_dir = args.input_dir
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+    kd_match_radius = args.kd_match_radius
+    output_mesh_path = args.output_mesh_path
 
 
     SLICE_IMG_DIR = Path(output_dir / 'slice_images')
@@ -533,13 +539,13 @@ def main():
 
     save_winding(volume=fixed_vol, slice_winding_dir=SLICE_WINDING_DIR, slice_img_dir=SLICE_IMG_DIR)
 
-    alignment_tree, segmentation_tree, point_indices_list = make_alignment_tree_query(volume=fixed_vol, kd_match_radius=1)
+    alignment_tree, segmentation_tree, point_indices_list = make_alignment_tree_query(volume=fixed_vol, kd_match_radius=kd_match_radius)
 
     uuid_to_obj_idx, global_faces = make_mesh(alignment_tree=alignment_tree, segmentation_tree=segmentation_tree, point_indices_list=point_indices_list)
 
     sorted_uuids = sorted(uuid_to_obj_idx, key=uuid_to_obj_idx.get)
 
-    with open(f'{output_dir}/mesh.obj', 'w') as fmesh:
+    with open(f'{output_mesh_path}', 'w') as fmesh:
         for _point_uuid in sorted_uuids:
             _point = Point.get_by_idx(idx=_point_uuid)
             _point_np = _point.get_point().tolist()
@@ -549,13 +555,20 @@ def main():
             fmesh.write(f'f {_face[0]} {_face[1]} {_face[2]}\n')
         
         print(f'Finished writing mesh.obj file!')
-
-    
     Point._registry.clear()
 
+    clean_mesh = {
+        'filename': f'{output_mesh_path.name}_cleaned',
+        'extension': output_mesh_path.suffix,
+        'parent': output_mesh_path.parent
+    }
 
+    clean_mesh_path = f'{clean_mesh['parent']}/{clean_mesh['filename']}.{clean_mesh['extension']}'
 
     
+    
+
+
     
 
 if __name__ == "__main__":
