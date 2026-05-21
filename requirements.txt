@@ -10,3 +10,4 @@ natsort
 pyvista
 pandas
 trimesh
+pymeshlab
