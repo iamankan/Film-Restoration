@@ -552,6 +552,49 @@ def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path) 
     return full_volume
 
 
+def repair_and_close_holes(input_mesh_path, output_mesh_path=None, max_hole_size=100):
+    ms = pymeshlab.MeshSet()
+
+    str_input_path = str(input_mesh_path)
+    
+    ms.load_new_mesh(str_input_path)
+    
+    ms.meshing_repair_non_manifold_vertices(vertdispratio=0)
+    
+    ms.meshing_close_holes(maxholesize=max_hole_size)
+    
+    if output_mesh_path is None:
+        str_output_path = str_input_path
+    else:
+        str_output_path = str(output_mesh_path)
+        
+    ms.save_current_mesh(str_output_path, save_vertex_normal=True)
+    print(f"Mesh processed and saved to: {str_output_path}")
+
+def repair_close_and_clean(input_mesh_path, output_mesh_path=None, vertical_displacenment_ratio:float = 0.0, max_hole_size=100):
+    ms = pymeshlab.MeshSet()
+    ms.load_new_mesh(str(input_mesh_path))
+    
+
+    ms.meshing_repair_non_manifold_vertices(vertdispratio=vertical_displacenment_ratio)
+    
+    ms.meshing_repair_non_manifold_edges()
+    
+    ms.meshing_close_holes(maxholesize=max_hole_size)
+    
+    ms.meshing_merge_close_vertices(threshold=pymeshlab.PercentageValue(0.01))
+    
+    ms.meshing_remove_null_faces()
+    
+    ms.meshing_remove_unreferenced_vertices()
+    
+    if output_mesh_path is None:
+        output_mesh_path = input_mesh_path
+    
+    ms.save_current_mesh(str(output_mesh_path), save_vertex_normal=True)
+    print(f"Cleaned mesh saved to: {output_mesh_path}")
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
@@ -562,64 +605,15 @@ def parse_arguments():
     mesh_group = parser.add_argument_group(title="Mesh parameter handler")
     mesh_group.add_argument('-r','--kd-match-radius', help="Radius for KD-Tree for matching segments", required=False, type=float, default=1.0)
     mesh_group.add_argument('-m','--output-mesh-path', help="Output mesh filename", required=False, type=Path, default='mesh.obj')
+    mesh_group.add_argument('--vertical-displacenment-ratio', help="Verical displacement ratio for fixing non-manifold vertices", type=float, default=0.0)
+    mesh_group.add_argument('--max-hole-size', help="Maximum hole size to remove holes", type=float, default=100)
+    mesh_group.add_argument('--allow-repair', help="Allow mesh repairing", action='store_true')
+
 
     args = parser.parse_args()
 
     return args
 
-def repair_and_close_holes(input_mesh_path, output_mesh_path=None, max_hole_size=100):
-    ms = pymeshlab.MeshSet()
-    
-    # Cast Path objects to string explicitly
-    str_input_path = str(input_mesh_path)
-    
-    # 1. Load the mesh
-    ms.load_new_mesh(str_input_path)
-    
-    # 2. Repair non-manifold vertices
-    ms.meshing_repair_non_manifold_vertices(vertdispratio=0)
-    
-    # 3. Close the gaps left by the segmentation drops
-    # ms.meshing_close_holes(maxholesize=max_hole_size)
-    
-    # 4. Handle saving path strings
-    if output_mesh_path is None:
-        str_output_path = str_input_path
-    else:
-        str_output_path = str(output_mesh_path)
-        
-    # 5. Export the clean, watertight surface
-    ms.save_current_mesh(str_output_path, save_vertex_normal=True)
-    print(f"Mesh processed and saved to: {str_output_path}")
-
-def repair_close_and_clean(input_mesh_path, output_mesh_path=None, max_hole_size=100):
-    ms = pymeshlab.MeshSet()
-    ms.load_new_mesh(str(input_mesh_path))
-    
-    # 1. Untangle vertex pinches
-    ms.meshing_repair_non_manifold_vertices(vertdispratio=0.005)
-    
-    # 2. Seal the segmentation drops
-    ms.meshing_close_holes(maxholesize=max_hole_size)
-    
-    # 3. POST-HOLE CLEANUP: Remove degenerate geometry
-    # Weld vertices closer than the threshold to collapse micro-edges
-    ms.meshing_merge_close_vertices(threshold=pymeshlab.PercentageValue(0.01))
-    
-    # FIX: Purge zero-area/collapsed faces (replaces meshing_remove_degenerate_faces)
-    ms.meshing_remove_null_faces()
-    
-    # Clean up any leftover floating vertices that lost their faces
-    ms.meshing_remove_unreferenced_vertices()
-    
-    # 4. Final safety check for non-manifold edges
-    ms.meshing_repair_non_manifold_edges()
-    
-    if output_mesh_path is None:
-        output_mesh_path = input_mesh_path
-    
-    ms.save_current_mesh(str(output_mesh_path), save_vertex_normal=True)
-    print(f"Cleaned mesh saved to: {output_mesh_path}")
 
 def main():
     args = parse_arguments()
@@ -628,6 +622,9 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     kd_match_radius = args.kd_match_radius
     output_mesh_path = args.output_mesh_path
+    vertical_displacenment_ratio = args.vertical_displacenment_ratio
+    max_hole_size = args.max_hole_size
+    allow_repair = args.allow_repair
 
 
     SLICE_IMG_DIR = Path(output_dir / 'slice_images')
@@ -665,17 +662,23 @@ def main():
         print(f'Finished writing mesh.obj file!')
     Point._registry.clear()
 
-    clean_mesh = {
-        'filename': f'{output_mesh_path.stem}_non_manifold',
-        'extension': output_mesh_path.suffix,
-        'parent': output_mesh_path.parent
-    }
 
-    clean_mesh_path = f'{clean_mesh['parent']}/{clean_mesh['filename']}{clean_mesh['extension']}'
+    print(f'Repairing {allow_repair}')
 
-    # repair_and_close_holes(input_mesh_path=output_mesh_path, output_mesh_path=clean_mesh_path)
 
-    repair_close_and_clean(input_mesh_path=output_mesh_path, output_mesh_path=clean_mesh_path)
+    if allow_repair:
+
+        clean_mesh = {
+            'filename': f'{output_mesh_path.stem}_manifold',
+            'extension': output_mesh_path.suffix,
+            'parent': output_mesh_path.parent
+        }
+
+        clean_mesh_path = f'{clean_mesh['parent']}/{clean_mesh['filename']}{clean_mesh['extension']}'
+
+        # repair_and_close_holes(input_mesh_path=output_mesh_path, output_mesh_path=clean_mesh_path)
+
+        repair_close_and_clean(input_mesh_path=output_mesh_path, output_mesh_path=clean_mesh_path, vertical_displacenment_ratio=vertical_displacenment_ratio, max_hole_size=max_hole_size)
 
 
     
