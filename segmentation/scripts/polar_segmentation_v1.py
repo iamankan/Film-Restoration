@@ -345,53 +345,72 @@ def make_alignment_tree_query(volume: Volume, kd_match_radius: float|int=1):
 
     return alignment_tree, segmentation_tree, list(point_indices_set)
 
+def make_mesh(alignment_tree, segmentation_tree, point_indices_list, volume_centroid: np.ndarray):
+    uuid_to_obj_idx = {
+        idx_str: (i + 1) for i, idx_str in enumerate(point_indices_list)
+    }
 
-# def make_mesh(alignment_tree, segmentation_tree, point_indices_list):
-#     uuid_to_obj_idx = {
-#         idx_str: (i + 1) for i, idx_str in enumerate(point_indices_list)
-#     }
-
-#     global_faces = []
+    global_faces = []
+    all_slice_indices = list(alignment_tree.keys())
     
-#     all_slice_indices = list(alignment_tree.keys())
-#     for curr_slice_index in all_slice_indices:
-#         all_segmentation_indices = list(alignment_tree[curr_slice_index].keys())
-#         for curr_segmentation_index in all_segmentation_indices:
-#             aligned_point_list = alignment_tree[curr_slice_index][curr_segmentation_index]
-#             # Check for two-way segmentation A->(B,C)
-#             pointing_to = segmentation_tree[curr_slice_index][curr_segmentation_index]
-#             for to_seg_idx in pointing_to:
-#                 _links = {
-#                     'uuid_indices':[],
-#                     '2d':[]
-#                 }
-#                 for _i, link in enumerate(aligned_point_list):
-#                     if link['to']['segment_index'] != to_seg_idx:
-#                         continue
-
-#                     _links['uuid_indices'].append(link['from']['point']['index'])
-#                     _links['uuid_indices'].append(link['to']['point']['index'])
-
-#                     _links['2d'].append([_i,0])
-#                     _links['2d'].append([_i,1])
+    for curr_slice_index in all_slice_indices:
+        all_segmentation_indices = list(alignment_tree[curr_slice_index].keys())
+        for curr_segmentation_index in all_segmentation_indices:
+            aligned_point_list = alignment_tree[curr_slice_index][curr_segmentation_index]
+            pointing_to = segmentation_tree[curr_slice_index][curr_segmentation_index]
+            
+            for to_seg_idx in pointing_to:
+                active_links = [
+                    link for link in aligned_point_list 
+                    if link['to']['segment_index'] == to_seg_idx
+                ]
                 
-#                 _points = np.array(_links['2d'])
-#                 # perform Delaunay
-#                 _tri = Delaunay(_points)
-#                 _simplices = _tri.simplices
-#                 print(f'Delaunay done for Slice: {curr_slice_index}, Segment: {curr_segmentation_index}')
+                if len(active_links) < 2:
+                    continue
 
-#                 # map back the simplices
-#                 for _simplice in _simplices:
-#                     _a = _links['uuid_indices'][_simplice[0]]
-#                     _b = _links['uuid_indices'][_simplice[1]]
-#                     _c = _links['uuid_indices'][_simplice[2]]
+                print(f'Stitching strip manually for Slice: {curr_slice_index}, From Seg: {curr_segmentation_index} -> To Seg: {to_seg_idx}')
 
-#                     global_faces.append([uuid_to_obj_idx[_a], uuid_to_obj_idx[_b], uuid_to_obj_idx[_c]])
-    
-#     return uuid_to_obj_idx, global_faces
+                for _i in range(len(active_links) - 1):
+                    link_curr = active_links[_i]
+                    link_next = active_links[_i + 1]
 
-def make_mesh(alignment_tree, segmentation_tree, point_indices_list):
+                    # Extracted raw 3D coordinates [x, y, z] straight from your class metadata
+                    p_a = np.array(link_curr['from']['point']['coordinate'])
+                    p_b = np.array(link_curr['to']['point']['coordinate'])
+                    p_c = np.array(link_next['from']['point']['coordinate'])
+                    p_d = np.array(link_next['to']['point']['coordinate'])
+
+                    # Map to your 1-based OBJ indices
+                    a = uuid_to_obj_idx[link_curr['from']['point']['index']]
+                    b = uuid_to_obj_idx[link_to_idx := link_curr['to']['point']['index']]
+                    c = uuid_to_obj_idx[link_next['from']['point']['index']]
+                    d = uuid_to_obj_idx[link_next['to']['point']['index']]
+
+                    # --- Triangle 1 (a, b, d) ---
+                    # Compute geometric normal via cross product
+                    n1 = np.cross(p_b - p_a, p_d - p_a)
+                    # Vector pointing from the volume's global center to this specific face vertex
+                    v_center1 = p_a - volume_centroid
+                    
+                    # If the normal points inward (dot product is negative), flip the winding order
+                    if np.dot(n1, v_center1) < 0:
+                        global_faces.append([a, d, b])
+                    else:
+                        global_faces.append([a, b, d])
+
+                    # --- Triangle 2 (a, d, c) ---
+                    n2 = np.cross(p_d - p_a, p_c - p_a)
+                    v_center2 = p_a - volume_centroid
+                    
+                    if np.dot(n2, v_center2) < 0:
+                        global_faces.append([a, c, d])
+                    else:
+                        global_faces.append([a, d, c])
+                    
+    return uuid_to_obj_idx, global_faces
+
+
+def make_mesh_old(alignment_tree, segmentation_tree, point_indices_list):
     uuid_to_obj_idx = {
         idx_str: (i + 1) for i, idx_str in enumerate(point_indices_list)
     }
@@ -516,16 +535,47 @@ def fix_winding(volume:Volume, target_winding:str)->Volume:
                 print(f'After: Segment#{seg.get_seg_idx()}, Winding: {seg.get_winding()}, [{seg.get_start_point()}, {seg.get_end_point()}]')
     return volume
 
-def read_segmentation_file(coord_file:Path, seg_idx:int, z_value: int):
-    coordinates = []
+# def get_sampled_coordinates(coord: list, sampling_rate: int=1):
+#     sampled_coordinates = coord[::sampling_rate]
+#     if sampled_coordinates[-1] != coord[-1]:
+#         sampled_coordinates.append(coord[-1])
+#     return sampled_coordinates
+
+
+# def read_segmentation_file(coord_file:Path, seg_idx:int, z_value: int, sampling_rate: int):
+#     coordinates = []
+#     with open(coord_file, 'r') as f:
+#         next(f)
+#         for line in f:
+#             xy = list(map(float, line.strip().split(',')))
+#             coordinates.append(Point(x=xy[0], y=xy[1], z=z_value))
+#     return Segment(all_points=get_sampled_coordinates(coord=coordinates, sampling_rate=sampling_rate), idx=seg_idx, z_value=z_value)
+
+def get_sampled_coordinates(coord: list, sampling_rate: int=1):
+    sampled_coordinates = coord[::sampling_rate]
+    # Simple check for lists of primitive types / tuples
+    if sampled_coordinates[-1] != coord[-1]:
+        sampled_coordinates.append(coord[-1])
+    return sampled_coordinates
+
+
+def read_segmentation_file(coord_file: Path, seg_idx: int, z_value: int, sampling_rate: int):
+    raw_coords = []
     with open(coord_file, 'r') as f:
-        next(f)
+        next(f) # Skip header
         for line in f:
             xy = list(map(float, line.strip().split(',')))
-            coordinates.append(Point(x=xy[0], y=xy[1], z=z_value))
-    return Segment(all_points=coordinates, idx=seg_idx, z_value=z_value)
+            raw_coords.append((xy[0], xy[1])) # Store as light tuple
+            
+    # 1. Downsample the raw data BEFORE turning them into heavy class objects
+    sampled_raw = get_sampled_coordinates(coord=raw_coords, sampling_rate=sampling_rate)
+    
+    # 2. Only instantiate Point objects for the final, optimized subset
+    final_points = [Point(x=pt[0], y=pt[1], z=z_value) for pt in sampled_raw]
+    
+    return Segment(all_points=final_points, idx=seg_idx, z_value=z_value)
 
-def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path) -> Volume:
+def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path, sampling_rate: int) -> Volume:
     all_slices = []
     for slice_idx, slice_id in enumerate(natsorted(input_dir.iterdir())):
         all_segments = []
@@ -543,7 +593,7 @@ def preprocess(input_dir:Path, slice_img_dir:Path, slice_segmentation_dir:Path) 
         shutil.copy2(slice_image, Path(slice_img_dir / f'{z_name}.jpg'))
 
         for seg_idx, coord_file in enumerate(all_segmentation_coordinate_files):
-            all_segments.append(read_segmentation_file(coord_file=coord_file, seg_idx=seg_idx, z_value=z_value))
+            all_segments.append(read_segmentation_file(coord_file=coord_file, seg_idx=seg_idx, z_value=z_value, sampling_rate=sampling_rate))
         single_slice = Slice(z_value=z_value, all_segments=all_segments, idx=slice_idx)
         all_slices.append(single_slice)
     
@@ -568,7 +618,34 @@ def repair_and_close_holes(input_mesh_path, output_mesh_path=None, max_hole_size
     else:
         str_output_path = str(output_mesh_path)
         
-    ms.save_current_mesh(str_output_path, save_vertex_normal=True)
+    ms.save_current_mesh(str(output_mesh_path), 
+                            save_vertex_color=False,
+                            save_vertex_coord=True,      
+                            save_vertex_normal=False,
+                            save_face_color=False,
+                            save_wedge_texcoord=False,
+                            save_wedge_normal=False,
+                            save_polygonal=False)
+    
+    print(f"Cleaned mesh saved to: {output_mesh_path}")
+
+    # 2. Define a temporary file path for the streaming process
+    temp_path = output_mesh_path.with_suffix('.tmp')
+
+    # 3. Stream line-by-line to fix the 1.0000000 precision overhead
+    with output_mesh_path.open("r") as infile, temp_path.open("w") as outfile:
+        for line in infile:
+            if line.startswith("v "):  # Match only vertex coordinate lines
+                parts = line.split()
+                # Truncate each coordinate to 3 decimal places
+                # Turns "v 1.2345678 2.0000000" into "v 1.235 2.000"
+                outfile.write(f"v {float(parts[1]):.3f} {float(parts[2]):.3f} {float(parts[3]):.3f}\n")
+            else:
+                # Pass faces (f) and headers through unmodified
+                outfile.write(line)
+
+    # 4. Atomic replace to overwrite the bloated file with the optimized one
+    temp_path.replace(output_mesh_path)
     print(f"Mesh processed and saved to: {str_output_path}")
 
 def repair_close_and_clean(input_mesh_path, output_mesh_path=None, vertical_displacenment_ratio:float = 0.0, max_hole_size=100):
@@ -591,8 +668,34 @@ def repair_close_and_clean(input_mesh_path, output_mesh_path=None, vertical_disp
     if output_mesh_path is None:
         output_mesh_path = input_mesh_path
     
-    ms.save_current_mesh(str(output_mesh_path), save_vertex_normal=True)
+    ms.save_current_mesh(str(output_mesh_path), 
+                            save_vertex_color=False,
+                            save_vertex_coord=True,      
+                            save_vertex_normal=False,
+                            save_face_color=False,
+                            save_wedge_texcoord=False,
+                            save_wedge_normal=False,
+                            save_polygonal=False)
+    
     print(f"Cleaned mesh saved to: {output_mesh_path}")
+
+    # 2. Define a temporary file path for the streaming process
+    temp_path = output_mesh_path.with_suffix('.tmp')
+
+    # 3. Stream line-by-line to fix the 1.0000000 precision overhead
+    with output_mesh_path.open("r") as infile, temp_path.open("w") as outfile:
+        for line in infile:
+            if line.startswith("v "):  # Match only vertex coordinate lines
+                parts = line.split()
+                # Truncate each coordinate to 3 decimal places
+                # Turns "v 1.2345678 2.0000000" into "v 1.235 2.000"
+                outfile.write(f"v {float(parts[1]):.3f} {float(parts[2]):.3f} {float(parts[3]):.3f}\n")
+            else:
+                # Pass faces (f) and headers through unmodified
+                outfile.write(line)
+
+    # 4. Atomic replace to overwrite the bloated file with the optimized one
+    temp_path.replace(output_mesh_path)
 
 
 def parse_arguments():
@@ -608,6 +711,7 @@ def parse_arguments():
     mesh_group.add_argument('--vertical-displacenment-ratio', help="Verical displacement ratio for fixing non-manifold vertices", type=float, default=0.0)
     mesh_group.add_argument('--max-hole-size', help="Maximum hole size to remove holes", type=float, default=100)
     mesh_group.add_argument('--allow-repair', help="Allow mesh repairing", action='store_true')
+    mesh_group.add_argument('--sampling-rate', help="Provide a sampling rate so that it can make a shallow yet meaningful mesh.", type=int, default=1)
 
 
     args = parser.parse_args()
@@ -622,9 +726,13 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     kd_match_radius = args.kd_match_radius
     output_mesh_path = args.output_mesh_path
+    output_mesh_path.parent.mkdir(parents=True, exist_ok=True)
     vertical_displacenment_ratio = args.vertical_displacenment_ratio
     max_hole_size = args.max_hole_size
     allow_repair = args.allow_repair
+    sampling_rate = int(args.sampling_rate)
+
+    print(f'Using sampling rate: {sampling_rate}')
 
 
     SLICE_IMG_DIR = Path(output_dir / 'slice_images')
@@ -636,7 +744,8 @@ def main():
     SLICE_SEGMENTATION_DIR = Path(output_dir / 'slice_segmentation_images')
     SLICE_SEGMENTATION_DIR.mkdir(parents=True, exist_ok=True)
 
-    full_volume = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR)
+    full_volume = preprocess(input_dir=input_dir, slice_img_dir=SLICE_IMG_DIR, slice_segmentation_dir=SLICE_SEGMENTATION_DIR,
+                             sampling_rate=sampling_rate)
 
     det_vol = determine_winding(volume=full_volume)
 
@@ -646,17 +755,45 @@ def main():
 
     alignment_tree, segmentation_tree, point_indices_list = make_alignment_tree_query(volume=fixed_vol, kd_match_radius=kd_match_radius)
 
-    uuid_to_obj_idx, global_faces = make_mesh(alignment_tree=alignment_tree, segmentation_tree=segmentation_tree, point_indices_list=point_indices_list)
+    # # 1. Grab the global center of gravity vector for the volume
+    # vol_centroid_np = fixed_vol.get_centroid().get_point()
+
+    # # 2. Pass it directly into the update mesh generator
+    # uuid_to_obj_idx, global_faces = make_mesh(
+    #     alignment_tree=alignment_tree, 
+    #     segmentation_tree=segmentation_tree, 
+    #     point_indices_list=point_indices_list,
+    #     volume_centroid=vol_centroid_np
+    # )
+
+    
+    uuid_to_obj_idx, global_faces = make_mesh_old(alignment_tree=alignment_tree, segmentation_tree=segmentation_tree, point_indices_list=point_indices_list)
 
     sorted_uuids = sorted(uuid_to_obj_idx, key=uuid_to_obj_idx.get)
 
-    with open(f'{output_mesh_path}', 'w') as fmesh:
+    # with open(f'{output_mesh_path}', 'w') as fmesh:
+    #     for _point_uuid in sorted_uuids:
+    #         _point = Point.get_by_idx(idx=_point_uuid)
+    #         _point_np = _point.get_point().tolist()
+    #         fmesh.write(f'v {_point_np[0]} {_point_np[1]} {_point_np[2]}\n')
+        
+    #     for _face in global_faces:
+    #         fmesh.write(f'f {_face[0]} {_face[1]} {_face[2]}\n')
+        
+    #     print(f'Finished writing mesh.obj file!')
+    # Point._registry.clear()
+
+    with output_mesh_path.open('w', newline='\n') as fmesh:
         for _point_uuid in sorted_uuids:
             _point = Point.get_by_idx(idx=_point_uuid)
             _point_np = _point.get_point().tolist()
-            fmesh.write(f'v {_point_np[0]} {_point_np[1]} {_point_np[2]}\n')
+            
+            # Clamp precision to 3 decimal places here using :.3f
+            # This converts [1.0000000, 2.5000000, 3.1415926] directly to "1.000 2.500 3.142"
+            fmesh.write(f'v {_point_np[0]:.1f} {_point_np[1]:.1f} {_point_np[2]:.1f}\n')
         
         for _face in global_faces:
+            # Keep faces strictly as integers, no normals attached
             fmesh.write(f'f {_face[0]} {_face[1]} {_face[2]}\n')
         
         print(f'Finished writing mesh.obj file!')
