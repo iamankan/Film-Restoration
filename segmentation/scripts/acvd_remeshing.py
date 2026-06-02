@@ -9,11 +9,13 @@ def resample(input_mesh:Path, output_mesh:Path, cluster_resolution:int, subdivis
     if not mesh.is_all_triangles:
         print("Mesh needs to be triangles only")
         return
+    print("Sanitizing mesh topology...")
+    mesh = mesh.clean()
     
-    
+    print("Initializing pyacvd clustering...")
     _cluster = pyacvd.Clustering(mesh=mesh)
 
-    _cluster.subdivide(nsub=subdivision_density)
+    # _cluster.subdivide(nsub=subdivision_density)
     _cluster.cluster(nclus=cluster_resolution)
 
     resampled_mesh = _cluster.create_mesh()
